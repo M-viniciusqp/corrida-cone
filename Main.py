@@ -101,13 +101,18 @@ def main():
                     pid.marcar_retomada()   # evita o chute do D nesta transicao
                 frame_anterior_confiavel = True
 
-                # erro da pista + deslocamento do desvio de cone (0 sem cone).
-                # O PID, o filtro de D e o freio de curva ficam exatamente
-                # como antes; o cone so empurra o alvo pro lado contrario.
+                # O PID continua vendo SO o erro da pista (D e filtros como
+                # antes). O desvio de cone entra DEPOIS como esterco extra
+                # proporcional: assim o degrau do cone nao dispara o termo D.
+                # O desvio e calculado pra ser um PISO sobre o erro da pista
+                # (ver cones.py), entao a pista nao empurra o carro pro cone.
                 offset = desvio.update(cone, res)
-                erro = max(-1.0, min(1.0, res.error + offset))
-
-                turn = pid.update(erro, res.heading)
+                turn = pid.update(res.error, res.heading)
+                if offset:
+                    adj = config.PID_KP * offset
+                    if config.STEER_INVERT:
+                        adj = -adj
+                    turn = max(-1.0, min(1.0, turn + adj))
                 speed = speed_for(turn, res.curvature) * desvio.fator_velocidade()
 
                 # log RAPIDO enquanto desvia (o resumo de 2s e lento demais pra

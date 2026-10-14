@@ -19,6 +19,14 @@ Por que somar no erro em vez de um modo "desvio" separado:
   - se a camera de cone falhar, o carro simplesmente volta a ser o piloto de
     faixa de antes.
 
+Como o desvio COMPOE com a pista (importante):
+  NAO e erro_pista + desvio. Assim a pista, querendo ir pra esquerda, ainda
+  puxava o carro pra cima de um cone que estava a esquerda. O desvio e um
+  PISO: o alvo final nunca pode ficar do lado errado do cone.
+      cone a esquerda: alvo_final = max(erro_pista, x_cone + folga)
+      cone a direita : alvo_final = min(erro_pista, x_cone - folga)
+  Se a pista ja quer ir pro lado seguro, o desvio e zero e nao atrapalha.
+
 Convencao de sinais (a mesma do erro da pista):
   x do cone: -1 = borda esquerda da imagem, +1 = borda direita.
   offset > 0 = empurra o alvo pra DIREITA (carro vira a direita).
@@ -150,6 +158,7 @@ class ConeAvoider:
         self._t_visto = None       # quando viu cone pela ultima vez
         self._prox_visto = 0.0
         self._cx_ant = None
+        self._t_ant = None         # p/ limitar a velocidade de variacao
 
     def reset(self):
         self.offset = 0.0
@@ -160,6 +169,7 @@ class ConeAvoider:
         self._t_visto = None
         self._prox_visto = 0.0
         self._cx_ant = None
+        self._t_ant = None
 
     # ------------------------------------------------------------------
     def update(self, cone, lane, agora=None):
@@ -172,7 +182,9 @@ class ConeAvoider:
 
         if visivel:
             self._decidir_lado(cone, agora)
-            alvo = self._deslocamento(cone) * cone.proximidade * config.CONE_GANHO
+            e_pista = lane.error if lane is not None else 0.0
+            alvo = (self._deslocamento(cone, e_pista) * cone.proximidade
+                    * config.CONE_GANHO)
             alvo = self._limitar_pela_pista(alvo, lane)
             self._alvo = alvo
             self._t_visto = agora
@@ -183,8 +195,14 @@ class ConeAvoider:
         else:
             alvo = self._sem_cone(agora)
 
+        # suaviza (EMA) e ainda limita a velocidade de variacao: o cone
+        # aparece/some de repente e isso vira degrau no volante.
+        dt = 1 / 30.0 if self._t_ant is None else max(0.0, min(0.2, agora - self._t_ant))
+        self._t_ant = agora
         b = config.CONE_OFFSET_SUAVIZACAO
-        self.offset = b * self.offset + (1.0 - b) * alvo
+        novo = b * self.offset + (1.0 - b) * alvo
+        passo = config.CONE_OFFSET_SLEW * dt
+        self.offset += max(-passo, min(passo, novo - self.offset))
         if abs(self.offset) < 0.005 and not self.ativo:
             self.offset = 0.0
         return self.offset
@@ -216,16 +234,15 @@ class ConeAvoider:
             # passa pela direita -> cone fica na ESQUERDA da imagem (-1).
             self.lado = -1 if config.CONE_LADO_PADRAO == "direita" else 1
 
-    def _deslocamento(self, cone):
-        """Quanto falta (em x da imagem) pra cumprir a folga desejada.
-        A folga e medida em larguras de cone, entao pede pouco quando o
-        cone esta longe e muito quando esta colado."""
-        f = config.CONE_FOLGA_LARGURAS
-        if self.lado < 0:       # cone tem que ficar a esquerda -> vira a direita
-            falta = max(0.0, cone.lat + f)
-        else:
-            falta = min(0.0, cone.lat - f)
-        return falta * cone.larg
+    def _deslocamento(self, cone, e_pista):
+        """Quanto ACIMA do erro da pista o alvo precisa ir pra cumprir a folga.
+        A folga e medida em larguras de cone: pede pouco com o cone longe e
+        muito com ele colado. Descontar e_pista e o que faz a pista nunca
+        ganhar do cone (ver docstring do modulo)."""
+        folga = config.CONE_FOLGA_LARGURAS * cone.larg
+        if self.lado < 0:       # cone fica a esquerda -> alvo >= x + folga
+            return max(0.0, cone.cx + folga - e_pista)
+        return min(0.0, cone.cx - folga - e_pista)
 
     def _limitar_pela_pista(self, off, lane):
         """Nunca deixa o alvo final passar da borda da pista (menos margem)."""

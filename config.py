@@ -199,7 +199,8 @@ CONE_ZONA_CENTRO  = 0.06   # |x| menor que isso = "bem no meio": usa o lado padr
 CONE_LADO_PADRAO  = "direita"   # por onde passa quando o cone esta centrado
 CONE_GANHO        = 1.0
 CONE_OFFSET_MAX   = 0.80   # maximo de deslocamento somado ao erro
-CONE_OFFSET_SUAVIZACAO = 0.5   # EMA do deslocamento (evita chute do D no PID)
+CONE_OFFSET_SUAVIZACAO = 0.5   # EMA do deslocamento
+CONE_OFFSET_SLEW  = 3.0    # maximo que o deslocamento varia (erro/segundo)
 CONE_MARGEM_PISTA = 0.15   # fracao da meia-largura que NAO invade da borda
 
 # Memoria: o cone some do campo de visao ANTES do carro terminar de passar
