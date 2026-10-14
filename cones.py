@@ -35,11 +35,13 @@ import config
 # ======================================================================
 class ConeResult:
     __slots__ = ("found", "cx", "altura", "proximidade", "bbox",
-                 "n_candidatos", "debug_view", "debug_mask")
+                 "n_candidatos", "debug_view", "debug_mask", "lat", "larg")
 
     def __init__(self):
         self.found = False
         self.cx = 0.0             # -1..+1, centro do cone na imagem
+        self.lat = 0.0            # distancia lateral em LARGURAS DE CONE
+        self.larg = 0.0           # largura do cone em unidades de x (-1..+1)
         self.altura = 0.0         # altura do cone / altura da imagem
         self.proximidade = 0.0    # 0 (longe) .. 1 (colado)
         self.bbox = None          # (x, y, w, h) em pixels do frame
@@ -101,6 +103,13 @@ class ConeVision:
             res.cx = ((x + w / 2.0) - W / 2.0) / (W / 2.0)
             res.altura = h / float(H)
 
+            # largura de referencia: se a base do cone saiu do quadro, a
+            # largura medida encolhe e a distancia lateral parece MAIOR do
+            # que e. Pela altura, estima a largura do cone inteiro.
+            w_ref = max(float(w), h / config.CONE_ASPECTO_REAL)
+            res.larg = w_ref / (W / 2.0)
+            res.lat = ((x + w / 2.0) - W / 2.0) / w_ref
+
             toca_base = (y + h) >= H - 2      # cortado pela borda de baixo
             if toca_base:
                 res.proximidade = 1.0
@@ -121,7 +130,7 @@ class ConeVision:
         if res.found:
             x, y, w, h = res.bbox
             cv2.rectangle(vis, (x, y), (x + w, y + h), (0, 255, 0), 2)
-            cv2.putText(vis, f"x {res.cx:+.2f} prox {res.proximidade:.2f}",
+            cv2.putText(vis, f"x {res.cx:+.2f} lat {res.lat:+.1f}w prox {res.proximidade:.2f}",
                         (x, max(12, y - 6)), cv2.FONT_HERSHEY_SIMPLEX,
                         0.45, (0, 255, 0), 1)
         return vis
@@ -207,16 +216,16 @@ class ConeAvoider:
             # passa pela direita -> cone fica na ESQUERDA da imagem (-1).
             self.lado = -1 if config.CONE_LADO_PADRAO == "direita" else 1
 
-    @staticmethod
-    def _folga_deslocamento(lado, cx):
-        # lado -1: cone tem que ficar em x <= -FOLGA  -> empurra pra direita
-        # lado +1: cone tem que ficar em x >= +FOLGA  -> empurra pra esquerda
-        if lado < 0:
-            return max(0.0, cx + config.CONE_FOLGA)
-        return min(0.0, cx - config.CONE_FOLGA)
-
     def _deslocamento(self, cone):
-        return self._folga_deslocamento(self.lado, cone.cx)
+        """Quanto falta (em x da imagem) pra cumprir a folga desejada.
+        A folga e medida em larguras de cone, entao pede pouco quando o
+        cone esta longe e muito quando esta colado."""
+        f = config.CONE_FOLGA_LARGURAS
+        if self.lado < 0:       # cone tem que ficar a esquerda -> vira a direita
+            falta = max(0.0, cone.lat + f)
+        else:
+            falta = min(0.0, cone.lat - f)
+        return falta * cone.larg
 
     def _limitar_pela_pista(self, off, lane):
         """Nunca deixa o alvo final passar da borda da pista (menos margem)."""

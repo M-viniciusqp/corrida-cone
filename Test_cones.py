@@ -26,8 +26,8 @@ from cones import ConeVision
 
 def hud(img, res):
     if res.found:
-        txt = (f"CONE x {res.cx:+.2f}  altura {res.altura:.2f}  "
-               f"prox {res.proximidade:.2f}  cand {res.n_candidatos}")
+        txt = (f"CONE x {res.cx:+.2f} lat {res.lat:+.1f}w  altura {res.altura:.2f}  "
+               f"prox {res.proximidade:.2f}")
         cor = (0, 255, 0)
     else:
         txt = f"sem cone  cand {res.n_candidatos}"

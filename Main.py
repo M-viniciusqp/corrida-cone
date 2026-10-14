@@ -56,6 +56,7 @@ def main():
                   config.ENA_B, config.IN3_B, config.IN4_B,
                   config.SERVO_PIN)
 
+    t_cone_log = 0.0               # log rapido do desvio (so com cone ativo)
     frames, t_fps = 0, time.time()
     turn = 0.0
     t_cam = t_vis = t_mot = 0.0    # acumuladores pra achar o gargalo real
@@ -109,6 +110,19 @@ def main():
                 turn = pid.update(erro, res.heading)
                 speed = speed_for(turn, res.curvature) * desvio.fator_velocidade()
 
+                # log RAPIDO enquanto desvia (o resumo de 2s e lento demais pra
+                # ver o que aconteceu num desvio que dura ~1s)
+                if desvio.ativo and time.time() - t_cone_log >= 0.15:
+                    t_cone_log = time.time()
+                    if cone is not None and cone.found:
+                        v = (f"x {cone.cx:+.2f} lat {cone.lat:+.1f}w "
+                             f"alt {cone.altura:.2f} prox {cone.proximidade:.2f}")
+                    else:
+                        v = "fora da visao (segurando)"
+                    print(f"  [desvio] {v} | pista {res.error:+.2f} "
+                          f"desvio {offset:+.2f} -> turn {turn:+.2f} "
+                          f"vel {speed:.2f} | lado {desvio.lado:+d}")
+
                 # TRAVA DE SEGURANCA: se o FPS medido estiver abaixo do minimo
                 # seguro pra velocidade configurada, o codigo reduz sozinho.
                 # E o que teria evitado o "saiu da pista" com camera a 6 FPS
@@ -157,8 +171,8 @@ def main():
                       f"D {pid.last_d:+.2f}  FF {pid.last_ff:+.2f}")
                 if cone_cam is not None:
                     if cone is not None and cone.found:
-                        cinfo = (f"VISTO x {cone.cx:+.2f} prox {cone.proximidade:.2f} "
-                                 f"alt {cone.altura:.2f}")
+                        cinfo = (f"VISTO x {cone.cx:+.2f} lat {cone.lat:+.1f}w "
+                                 f"prox {cone.proximidade:.2f} alt {cone.altura:.2f}")
                     else:
                         cinfo = "nao visto"
                     lado_t = {-1: "passa pela DIREITA", 1: "passa pela ESQUERDA",

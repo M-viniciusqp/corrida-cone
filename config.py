@@ -176,6 +176,8 @@ CONE_S_MIN      = 110     # saturacao minima (tira branco, cinza, parede)
 CONE_V_MIN      = 70      # brilho minimo (tira sombra escura)
 CONE_ROI_TOP_PCT = 0.10   # ignora a faixa de cima da imagem
 CONE_AREA_MIN_PCT = 0.0015   # area minima do cone, fracao do frame
+CONE_ASPECTO_REAL = 1.5   # altura/largura do cone inteiro (com a base). Usado
+                          # pra estimar a largura quando a base sai do quadro.
 CONE_ASPECTO_MIN = 0.60   # altura/largura minima do retangulo do cone
 CONE_ASPECTO_MAX = 4.00
 CONE_PREENCHIMENTO_MIN = 0.35   # area / area do retangulo (triangulo ~0.5)
@@ -183,12 +185,16 @@ CONE_PREENCHIMENTO_MIN = 0.35   # area / area do retangulo (triangulo ~0.5)
 # ---- distancia aproximada: altura do cone / altura da imagem ----
 # Use Test_cones.py com o cone na distancia onde quer COMECAR a desviar
 # (LONGE) e na distancia onde ja deve estar desviando por completo (PERTO).
-CONE_ALTURA_LONGE = 0.10   # proximidade 0.0 (nao reage ainda)
-CONE_ALTURA_PERTO = 0.40   # proximidade 1.0 (desvio total)
+CONE_ALTURA_LONGE = 0.05   # proximidade 0.0 (nao reage ainda)
+CONE_ALTURA_PERTO = 0.15   # proximidade 1.0 (desvio total)
 
 # ---- desvio ----
-CONE_CORREDOR     = 0.75   # so reage a cone com |x| menor que isso (-1..+1)
-CONE_FOLGA        = 0.45   # onde o cone deve FICAR na imagem ao passar (-1..+1)
+CONE_CORREDOR     = 0.95   # so reage a cone com |x| menor que isso (-1..+1)
+# Folga lateral medida em LARGURAS DE CONE (nao em pixels da imagem!).
+# x=0.45 na imagem e muito lado a 2m e quase nada a 40cm; largura de cone
+# escala com a distancia. 1.6 largura ~ meia largura do carro + raio do cone
+# + folga. Raspou no cone -> suba. Desviando demais -> desca.
+CONE_FOLGA_LARGURAS = 1.6
 CONE_ZONA_CENTRO  = 0.06   # |x| menor que isso = "bem no meio": usa o lado padrao
 CONE_LADO_PADRAO  = "direita"   # por onde passa quando o cone esta centrado
 CONE_GANHO        = 1.0
@@ -198,9 +204,10 @@ CONE_MARGEM_PISTA = 0.15   # fracao da meia-largura que NAO invade da borda
 
 # Memoria: o cone some do campo de visao ANTES do carro terminar de passar
 # por ele. Sem segurar o desvio, o carro volta pro centro e raspa o cone.
-CONE_SEGURAR_S       = 0.60   # cone estava perto: mantem o desvio por esse tempo
+CONE_SEGURAR_S       = 1.20   # cone estava perto: mantem o desvio por esse tempo
+                              # (tem que cobrir o carro INTEIRO passando)
 CONE_SEGURAR_LONGE_S = 0.15   # cone estava longe: so tolera falha de deteccao
-CONE_DECAI_S         = 0.50   # depois disso, volta ao normal gradualmente
+CONE_DECAI_S         = 0.80   # depois disso, volta ao normal gradualmente
 CONE_RECONHECE_S     = 0.25   # sumiu por mais que isso -> proximo cone e outro
 CONE_TROCA_CX        = 0.35   # salto de x entre frames -> trata como outro cone
 
