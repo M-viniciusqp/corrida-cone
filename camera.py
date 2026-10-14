@@ -16,22 +16,22 @@ import time
 import cv2
 
 
-def abrir_camera(indice, res, nome="camera"):
+def abrir_camera(indice, res, nome="camera", fps=30):
     cap = cv2.VideoCapture(indice, cv2.CAP_V4L2)
 
     # MJPG chega comprimido: ate 5-10x mais rapido que YUYV em USB.
     cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, res[0])
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, res[1])
-    cap.set(cv2.CAP_PROP_FPS, 30)
+    cap.set(cv2.CAP_PROP_FPS, fps)
     cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)     # sempre o frame mais novo
 
     fourcc = int(cap.get(cv2.CAP_PROP_FOURCC))
     fourcc_str = "".join([chr((fourcc >> 8 * i) & 0xFF) for i in range(4)])
     w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    fps = cap.get(cv2.CAP_PROP_FPS)
-    print(f"Camera {nome} (id {indice}): {w}x{h} @ {fps:.0f}fps pedido, "
+    fps_real = cap.get(cv2.CAP_PROP_FPS)
+    print(f"Camera {nome} (id {indice}): {w}x{h} @ {fps_real:.0f}fps pedido, "
           f"formato={fourcc_str}")
     if cap.isOpened() and fourcc_str.strip() != "MJPG":
         print(f"AVISO: camera {nome} NAO aceitou MJPG. Com duas cameras no "

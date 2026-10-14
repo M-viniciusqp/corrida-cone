@@ -38,7 +38,8 @@ def main():
     # camera de cone: se nao abrir, o carro segue so a faixa (como antes)
     cone_cam = None
     if config.CONE_CAMERA_ATIVA:
-        cap_cone = abrir_camera(config.CAMERA_CONE_ID, config.CAMERA_CONE_RES, "cone")
+        cap_cone = abrir_camera(config.CAMERA_CONE_ID, config.CAMERA_CONE_RES, "cone",
+                                 fps=config.CAMERA_CONE_FPS)
         if cap_cone.isOpened():
             cone_cam = CameraThread(cap_cone)
         else:

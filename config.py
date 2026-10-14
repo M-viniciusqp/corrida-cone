@@ -165,6 +165,8 @@ CONE_CAMERA_ATIVA = True
 CAMERA_PISTA_ID   = 0
 CAMERA_CONE_ID    = 2
 CAMERA_CONE_RES   = (320, 240)   # cone e grande: nao precisa de resolucao alta
+CAMERA_CONE_FPS   = 15           # menos banda USB e menos CPU pra decodificar MJPG;
+                                 # a camera da pista fica com o FPS que precisa
 
 # ---- deteccao por cor (HSV do OpenCV: H 0..179) ----
 # Vermelho/laranja "dobra" o matiz: fica perto de 0 E perto de 179.
