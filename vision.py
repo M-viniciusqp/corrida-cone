@@ -26,7 +26,8 @@ class LaneResult:
     __slots__ = ("error", "heading", "curvature", "found_left", "found_right",
                  "valid", "center_x", "debug_view", "debug_mask",
                  "motivo", "n_pontos", "lado_continuo",
-                 "lane_center_x", "hw_px", "sinal_continuo")
+                 "lane_center_x", "hw_px", "sinal_continuo",
+                 "cone_w_cm", "cone_px", "error_u")
 
     def __init__(self):
         self.error = 0.0
@@ -50,6 +51,17 @@ class LaneResult:
         # O desvio de cones usa isso pra saber qual borda da pista pode ser
         # cruzada (a pontilhada) e qual nao (a continua).
         self.sinal_continuo = 0.0
+        # cone visto PELA CAMERA DA PISTA: posicao lateral em cm a partir do
+        # centro da faixa direita (+ = direita), comparada ao centro da faixa
+        # NA MESMA FILEIRA da imagem (imune ao giro do carro e a curva). None
+        # = nao viu cone / nao deu pra medir.
+        self.cone_w_cm = None
+        self.cone_px = None        # (x, y_base) so pra HUD
+        # erro da pista SEM o corte em +-1 (suavizado igual ao error). O corte
+        # esconde o quanto o carro passou do alvo: com o carro bem fora do
+        # centro o erro "satura" em 1.0 e, somado ao desvio de cone (negativo),
+        # o resultado e fraco demais pra trazer o carro de volta.
+        self.error_u = 0.0
 
 
 class LaneVision:
@@ -66,6 +78,7 @@ class LaneVision:
         # modelo aprendido: meia_largura(y) = a*y + b   (em pixels)
         self.hw_model = None
         self.smooth_error = 0.0
+        self.smooth_error_u = 0.0
         self.last_center = self.W * config.CAR_CENTER_PCT
         self.lost_frames = 0
         self.last_thr = 0.0
@@ -155,7 +168,7 @@ class LaneVision:
         self.white_frac = mask.mean() / 255.0
 
         # tira cones da mascara: o plastico brilhante tem reflexos brancos e
-        # pouco saturados que passavam por "faixa" e bagunçavam o erro bem na
+        # pouco saturados que passavam por "faixa" e bagunÃ§avam o erro bem na
         # hora do desvio. Dilata um pouco pra pegar o reflexo na borda.
         if config.CONE_PISTA_DILATA_PX > 0:
             s_min, v_min = config.CONE_S_MIN, config.CONE_V_MIN
@@ -548,6 +561,7 @@ class LaneVision:
         # na esquerda ou na direita, sem precisar mudar nada no config.
         # Sempre escala com a largura real vista no frame -> funciona em
         # qualquer trecho, reto ou curva, sem virar valor fixo em pixel.
+        alvo_u = alvo
         if config.LANE_BIAS_FRAC != 0.0:
             hw_look = self._half_width(y_look)
             if hw_look is not None:
@@ -556,16 +570,20 @@ class LaneVision:
                 # lado da CONTINUA, e o que voce quer e o oposto -- ficar mais
                 # perto da PONTILHADA.
                 alvo += -self._sinal_continuo * mag * hw_look
+                alvo_u = alvo
                 alvo = max(0.0, min(float(self.W), alvo))
 
         self.last_center = 0.6 * self.last_center + 0.4 * media
 
         car_x = self.W * config.CAR_CENTER_PCT
         raw = max(-1.0, min(1.0, (alvo - car_x) / (self.W / 2.0)))
+        raw_u = max(-2.0, min(2.0, (alvo_u - car_x) / (self.W / 2.0)))
 
         a = config.ERRO_SUAVIZACAO
         self.smooth_error = a * self.smooth_error + (1 - a) * raw
+        self.smooth_error_u = a * self.smooth_error_u + (1 - a) * raw_u
         res.error = self.smooth_error
+        res.error_u = self.smooth_error_u
 
         # ---- TRAVA ANTI-SATURACAO
         # Erro colado em +-1 por muitos frames nao e curva: e rastreio perdido
@@ -592,12 +610,146 @@ class LaneVision:
         res.center_x = alvo
         res.valid = True
 
+        if config.CONE_NA_PISTA:
+            res.cone_w_cm, res.cone_px = self._cone_na_pista(frame, y0, centros)
+
         if debug:
             res.debug_view, res.debug_mask = self._draw(
                 roi, mask, centros, (alvo, y_look, car_x))
         return res
 
     # ------------------------------------------------------------------
+    def _cone_na_pista(self, frame, y0, centros):
+        """Acha o cone (vermelho) na imagem da PISTA e diz onde ele esta na
+        faixa: cm a partir do centro da faixa direita (+ = direita).
+
+        Compara a base do cone com o centro da faixa e a meia-largura NA MESMA
+        FILEIRA, entao nao depende do giro do carro nem da curva (a camera
+        frontal mede o cone em relacao ao EIXO do carro, o que erra por ~30 cm
+        com 10 graus de giro a 2 m)."""
+        if self.hw_model is None or len(centros) < 3:
+            return None, None
+        hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+        s_min, v_min = config.CONE_S_MIN, config.CONE_V_MIN
+        red = cv2.bitwise_or(
+            cv2.inRange(hsv, (0, s_min, v_min), (config.CONE_H_BAIXO, 255, 255)),
+            cv2.inRange(hsv, (config.CONE_H_ALTO, s_min, v_min), (179, 255, 255)))
+        if not red.any():
+            return None, None
+        red = cv2.morphologyEx(red, cv2.MORPH_OPEN, self._k_open)
+        n, _, st, _ = cv2.connectedComponentsWithStats(red, connectivity=8)
+        melhor = None
+        for i in range(1, n):
+            x, y, w, h, area = (int(v) for v in st[i])
+            if area < config.CONE_PISTA_AREA_MIN or w < 3 or h < 3:
+                continue
+            if h / float(w) > 5.0:          # fita/risco fino, nao e cone
+                continue
+            y_b = y + h - 1
+            if melhor is None or y_b > melhor[1]:
+                melhor = (x + w / 2.0, y_b, w)
+        if melhor is None:
+            return None, None
+        x_c, y_b, w_px = melhor
+
+        if y_b < config.CONE_PISTA_YB_MIN:
+            return None, None                  # longe: a leitura e ruidosa demais
+        # fileira da base do cone, nas coordenadas do ROI (as do modelo)
+        yr = y_b - y0
+        hw = float(np.polyval(self.hw_model, yr))
+        if hw < config.SCAN_HW_MIN * 0.8 or hw > config.SCAN_HW_MAX:
+            return None, None            # longe/perto demais pra medir bem
+        # o cone tem a largura certa pra essa distancia? (rejeita vermelho
+        # que nao e cone e cone cortado pela borda da imagem)
+        esperado = 2.0 * hw * (config.CONE_LARGURA_CM / config.PISTA_LARGURA_CM)
+        if not (0.35 * esperado <= w_px <= 1.8 * esperado):
+            return None, None
+
+        # 1) as LINHAS na mesma fileira da base do cone (a continua e solida:
+        # sempre aparece). E o que nao depende de extrapolar a curva.
+        w = self._w_por_linhas(frame, int(y_b), x_c, w_px, hw, red)
+
+        # 2) senao, o centro da faixa por reta local, so se a base do cone
+        # estiver perto da zona varrida (longe a curva faz a reta errar muito)
+        if w is None:
+            pts = sorted(centros, key=lambda c: c[0])[:6]
+            ys = np.array([p[0] for p in pts], dtype=float)
+            xs = np.array([p[1] for p in pts], dtype=float)
+            ws = np.array([p[2] for p in pts], dtype=float)
+            if yr < ys.min() - config.CONE_PISTA_EXTRAP_PX:
+                return None, None
+            if len(pts) >= 3 and (ys.max() - ys.min()) >= 12.0:
+                try:
+                    a_, b_ = np.polyfit(ys, xs, 1, w=ws)
+                except (np.linalg.LinAlgError, ValueError):
+                    return None, None
+                x_l = a_ * yr + b_
+            else:
+                x_l = float(np.average(xs, weights=ws))
+            w = (x_c - x_l) / hw * (config.PISTA_LARGURA_CM / 2.0)
+        if abs(w) > 1.7 * config.PISTA_LARGURA_CM:
+            return None, None            # fora da pista: nao e do caminho
+        return float(w), (float(x_c), float(y_b))
+
+    def _w_por_linhas(self, frame, y_b, x_c, w_px, hw, red):
+        """Posicao do cone (cm do centro da faixa direita, + = direita) pelas
+        linhas CONTINUAS vistas na fileira da base dele: a da direita (em
+        +lw/2) e a externa da esquerda (em -1.5*lw). Nao precisa da
+        pontilhada (tem buracos). None se nao achou, ou se as duas
+        discordam."""
+        lw = config.PISTA_LARGURA_CM
+        H, W = frame.shape[:2]
+        ya, yz = max(0, y_b - 1), min(H, y_b + 2)
+        if yz - ya < 2:
+            return None
+        g = cv2.cvtColor(frame[ya:yz], cv2.COLOR_BGR2GRAY).astype(np.float32).mean(axis=0)
+        kw = int(max(7, min(41, 0.5 * hw))) | 1
+        gl = np.clip(g, 0, 255).astype(np.uint8).reshape(1, -1)
+        th = cv2.morphologyEx(gl, cv2.MORPH_TOPHAT,
+                              np.ones((1, kw), np.uint8))[0].astype(np.float32)
+        # tira o vermelho (e a faixa branca do cone): so o chao conta
+        ruim = (red[ya:yz].max(axis=0) > 0).astype(np.uint8).reshape(1, -1)
+        ruim = cv2.dilate(ruim, np.ones((1, 9), np.uint8))[0] > 0
+        th[ruim] = 0.0
+        meio = 0.7 * w_px + 3.0
+        xs = np.arange(W, dtype=np.float32)
+        th[np.abs(xs - x_c) <= meio] = 0.0
+        alc = 4.3 * hw
+        th[np.abs(xs - x_c) > alc] = 0.0
+
+        pico = float(th.max())
+        if pico < config.TOPHAT_MIN * 0.8:
+            return None
+        thr = max(config.TOPHAT_MIN * 0.7, 0.4 * pico)
+        on = th >= thr
+        # trechos finos (linha), do tamanho de uma fita
+        d = np.diff(np.concatenate(([0], on.astype(np.int8), [0])))
+        ini, fim = np.flatnonzero(d == 1), np.flatnonzero(d == -1) - 1
+        cand = [0.5 * (a + b) for a, b in zip(ini, fim) if 2 <= (b - a + 1) <= kw]
+        if not cand:
+            return None
+        dir_ = [x for x in cand if x > x_c]
+        esq_ = [x for x in cand if x < x_c]
+        w_r = w_l = None
+        # A linha mais EXTERNA de cada lado so e a continua se a continua
+        # CABE na imagem desse lado (senao a "mais externa" pode ser a
+        # pontilhada e o resultado erra uma faixa inteira, 29 cm).
+        cabe_dir = (x_c + 3.1 * hw) < (W - 2)
+        cabe_esq = (x_c - 3.1 * hw) > 2
+        if dir_:
+            x_r = max(dir_)                       # a mais externa
+            if cabe_dir or (x_r - x_c) > 2.2 * hw:
+                w_r = (lw / 2.0) * (1.0 - (x_r - x_c) / hw)
+        if esq_:
+            x_e = min(esq_)
+            if cabe_esq or (x_c - x_e) > 2.2 * hw:
+                w_l = -1.5 * lw + (x_c - x_e) / hw * (lw / 2.0)
+        if w_r is not None and w_l is not None:
+            if abs(w_r - w_l) > 0.4 * lw:
+                return None
+            return 0.5 * (w_r + w_l)
+        return w_r if w_r is not None else w_l
+
     @property
     def em_desvio(self):
         """True durante e logo apos um desvio de cone (janela de ~3 s)."""

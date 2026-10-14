@@ -124,7 +124,8 @@ def main():
                 else:
                     # modo posicao: o deslocamento move o ALVO e passa pelo
                     # PID (o termo D amortece, sem passar do ponto)
-                    erro = max(-1.0, min(1.0, res.error +
+                    base = res.error_u if config.CONE_ERRO_SEM_SATURAR else res.error
+                    erro = max(-1.0, min(1.0, base +
                                          offset * config.CONE_GANHO_POS))
                     # NUNCA vira pro lado do cone que esta passando: se o carro
                     # passou do alvo (erro da pista saturado), a soma pista +
@@ -157,7 +158,13 @@ def main():
                                  f"({onde})") + aviso
                     else:
                         aviso = " | continua nao vista" + aviso
-                    print(f"  [desvio] {v} | pista {res.error:+.2f} "
+                    if desvio.w_cone_cm is not None:
+                        # onde o carro ACHA que o cone esta (cm do centro da
+                        # faixa direita; negativo = lado da pontilhada) e pra
+                        # onde mira (alvo)
+                        aviso += (f" | cone {desvio.w_cone_cm:+.0f}cm "
+                                  f"alvo {desvio.w_alvo_cm:+.0f}cm")
+                    print(f"  [desvio] {v} | pista {res.error_u:+.2f} "
                           f"desvio {offset:+.2f} -> turn {turn:+.2f} "
                           f"vel {speed:.2f} | lado {desvio.lado:+d}{aviso}")
 

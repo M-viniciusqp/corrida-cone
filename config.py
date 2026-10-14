@@ -274,7 +274,7 @@ CONE_MEDIDA_ALTURA_MIN = 0.06   # a distancia ate a continua so vale com o cone 
                                 # 1-2 cm ja a partir de 0.08, ~2.5 m)
 CONE_MEDIDA_ALTURA_MAX = 0.30   # acima disso (cone muito perto) a medida piora, em
                                 # curva principalmente: so se usa se nao ha outra
-CONE_CONF_GEO = 0.5             # peso do deslocamento quando so ha a estimativa
+CONE_CONF_GEO = 0.6             # peso do deslocamento quando so ha a estimativa
                                 # geometrica (nunca se mediu a posicao do cone)
 CONE_LINHA_PRESENCA   = 0.75    # fracao das linhas da faixa em que a linha
                                 # tem que aparecer pra contar como CONTINUA
@@ -297,8 +297,19 @@ CONE_OFFSET_SLEW  = 0.8    # maximo que o deslocamento varia (erro/segundo). 1 u
                            # de erro ~ 29 cm de alvo na faixa: 1.5/s = ~40 cm/s, o
                            # que o carro consegue acompanhar (antes 6.0 era um degrau)
 CONE_RETORNO_SLEW = 0.35   # idem, mas VOLTANDO pro centro da faixa (erro/segundo ~ 10 cm/s)
+CONE_ERRO_SEM_SATURAR = True    # no desvio, soma o cone no erro da pista SEM o corte em +-1
+CONE_NA_PISTA = False           # (experimental) mede o cone na camera da PISTA tambem; no simulador
+                                # piorou, por isso desligado. Ligue so pra testar.
+CONE_PISTA_YB_MIN = 0           # so mede com a base do cone abaixo desta fileira da imagem
+CONE_PISTA_AREA_MIN = 40        # area minima (px) do vermelho na camera da pista
+CONE_PISTA_EXTRAP_PX = 70       # quanto acima da zona varrida a reta do centro da faixa
+                                # pode ser extrapolada pra achar a fileira do cone
+CONE_PISTA_ASSOCIA_ALTURA = 0.10   # a medida da pista so vale com o cone frontal assim de perto
+CONE_ACAO_ALTURA_SEM_MEDIDA = 0.17   # sem medida da posicao, espera o cone chegar mais perto
+CONE_USA_POS_CARRO = True       # lado e posicao do cone = posicao REAL do carro (visao da
+                                # pista) + lat do cone. Nao depende de ver a linha continua.
 CONE_USA_FAIXA_CARRO = True     # decide o lado sabendo em QUAL faixa o carro esta
-CONE_ACAO_ALTURA = 0.11        # cone no horizonte: mede mas so AGE quando passar disso
+CONE_ACAO_ALTURA = 0.14        # cone no horizonte: mede mas so AGE quando passar disso
                                # (~1.3 m). Mais alto = espera chegar mais perto.
 CONE_FRENTE_X = 0.5            # |x| menor que isso = o cone esta de frente (na faixa do carro)
 CONE_FAIXA_TEMPO_S = 0.7       # tempo com o alvo na outra faixa pra considerar que o carro

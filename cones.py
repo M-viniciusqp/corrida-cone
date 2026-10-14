@@ -349,6 +349,9 @@ class ConeAvoider:
         self.w_cone_cm = None      # onde o cone esta (cm do centro da pista)
         self._w_mem = None         # posicao MEDIDA deste cone (cm da pista)
         self._w_obs = []           # medidas recentes (pra mediana)
+        self._w_geo = []           # estimativas geometricas (carro + lat), mediana
+        self._w_lane = None        # medida AGORA pela camera da pista (cm)
+        self._w_lane_obs = []      # medidas recentes pela camera da pista
         self.conf = 1.0            # 1 = posicao medida, <1 = so estimativa
 
         self._alvo = 0.0           # ultimo deslocamento "bruto" com cone visivel
@@ -375,6 +378,9 @@ class ConeAvoider:
         self.w_cone_cm = None
         self._w_mem = None
         self._w_obs = []
+        self._w_geo = []
+        self._w_lane = None
+        self._w_lane_obs = []
         self.conf = 1.0
         self._alvo = 0.0
         self._t_visto = None
@@ -405,6 +411,13 @@ class ConeAvoider:
             visivel = False
 
         self.parar = False
+        self._w_lane = None
+        if visivel and lane is not None and config.CONE_NA_PISTA:
+            w_l = getattr(lane, "cone_w_cm", None)
+            # a camera da pista so enxerga o cone mais PROXIMO; so associa
+            # quando a camera frontal tambem o ve perto (mesmo cone)
+            if w_l is not None and cone.altura >= config.CONE_PISTA_ASSOCIA_ALTURA:
+                self._w_lane = w_l
         if visivel:
             e_pista = lane.error if lane is not None else 0.0
             self._decidir_lado(cone, agora, e_pista, lane)
@@ -429,7 +442,10 @@ class ConeAvoider:
             # CONE NO HORIZONTE: mede e decide, mas so AGE quando chegar perto
             # (ou se ja esta no meio de uma manobra). Agir de longe era a
             # parte "imprecisa": o carro se deslocava antes de saber direito.
-            agindo = (cone.altura >= config.CONE_ACAO_ALTURA or
+            medido = bool(self._w_lane_obs) or self._w_mem is not None
+            alt_min = (config.CONE_ACAO_ALTURA if medido
+                       else config.CONE_ACAO_ALTURA_SEM_MEDIDA)
+            agindo = (cone.altura >= alt_min or
                       abs(self.offset) > 0.1 or abs(self._alvo) > 0.1)
             if not agindo:
                 alvo = 0.0
@@ -534,6 +550,17 @@ class ConeAvoider:
         self.dist_cont_cm = None
         pont = self._lado_da_pontilhada(lane)
 
+        # 0) posicao do cone medida PELA CAMERA DA PISTA (a melhor medida:
+        # base do cone x centro da faixa na mesma fileira da imagem)
+        lista = self._w_lane_obs + ([self._w_lane] if self._w_lane is not None else [])
+        if lista and pont is not None:
+            w = float(np.median(lista[-7:]))
+            lw = config.PISTA_LARGURA_CM
+            dentro = w if pont > 0 else -w          # + = rumo a continua
+            cone_na_outra = dentro < -lw / 2.0 - config.CONE_NA_LINHA_CM
+            self.na_faixa = not cone_na_outra
+            return (-pont if cone_na_outra else pont), True
+
         # 1) a regra do usuario, medida NA IMAGEM DO CONE
         if (cone.d_solida_w is not None and cone.lado_solida != 0 and
                 cone.altura >= config.CONE_MEDIDA_ALTURA_MIN and
@@ -570,6 +597,17 @@ class ConeAvoider:
         # faixa daquele lado da pontilhada. A faixa do carro (propria ou a
         # outra, do outro lado da pontilhada) vem de self.na_outra, que o
         # proprio desvio mantem (cruzou -> esta na outra; voltou -> propria).
+        if pont is not None and config.CONE_USA_POS_CARRO:
+            # onde o carro REALMENTE esta (visao da pista) + o quanto o cone
+            # esta ao lado dele (larguras de cone). Nao precisa ver linha
+            # nenhuma e nao depende de maquina de estados.
+            w = self._w_geometrico(cone, lane, grava=False)
+            if w is not None:
+                lw = config.PISTA_LARGURA_CM
+                dentro = w if pont > 0 else -w        # + = rumo a continua
+                cone_na_outra = dentro < -lw / 2.0 - config.CONE_NA_LINHA_CM
+                self.na_faixa = not cone_na_outra
+                return (-pont if cone_na_outra else pont), False
         if pont is not None and not config.CONE_USA_FAIXA_CARRO:
             # versao anterior (sem saber em qual faixa o carro esta): se o carro
             # acabou de se deslocar, cone de frente passa pelo lado de volta;
@@ -620,19 +658,37 @@ class ConeAvoider:
             self._disc_t = None
             self._w_mem = None      # a posicao medida era do cone anterior
             self._w_obs = []
+            self._w_geo = []
+            self._w_lane_obs = []
             return
 
         # o lado atual era so um PALPITE (a faixa continua ainda nao tinha
         # sido identificada): a primeira medida real o substitui na hora,
         # mesmo com o cone ja perto -- o palpite errado e pior que trocar.
+        if medido and not self._lado_medido:
+            # o lado atual era so palpite: a primeira medida real o substitui
+            self.lado = prop
+            self._lado_medido = True
+            self._disc_t = None
+            return
+        if (not medido and not self._lado_medido and abs(self._alvo) < 0.05
+                and abs(self.offset) < 0.05):
+            # ainda nao comecou a desviar: a estimativa melhora a cada frame
+            self.lado = prop
+            self._disc_t = None
+            return
         if not medido or prop == self.lado:
             self._disc_t = None
             return
 
         if self._disc_t is None:
             self._disc_t = agora
+        # medida da camera da pista e MELHOR quanto mais perto (leitura de
+        # longe e ruidosa e foi o que travou o lado errado): vale trocar
+        # mesmo com o cone perto
+        da_pista = bool(self._w_lane_obs) or self._w_lane is not None
         if (agora - self._disc_t >= config.CONE_TROCA_PERSISTE_S and
-                cone.altura < config.CONE_TROCA_LADO_ALTURA_MAX):
+                (da_pista or cone.altura < config.CONE_TROCA_LADO_ALTURA_MAX)):
             self.lado = prop
             self._lado_medido = True
             self._disc_t = None
@@ -643,6 +699,16 @@ class ConeAvoider:
         continua na imagem do cone (exata, nao depende do giro do carro);
         senao e uma estimativa pela geometria (aceita a longe)."""
         lw, cw = config.PISTA_LARGURA_CM, config.CONE_LARGURA_CM
+        if self._w_lane is not None:
+            self._w_lane_obs.append(self._w_lane)
+            if len(self._w_lane_obs) > 12:
+                self._w_lane_obs.pop(0)
+        if self._w_lane_obs:
+            # o cone e fixo: mediana das ultimas medidas da camera da pista
+            w = float(np.median(self._w_lane_obs[-7:]))
+            self._w_mem = w
+            self.conf = 1.0
+            return w, True
         if (cone.d_solida_w is not None and cone.lado_solida != 0 and
                 cone.altura >= config.CONE_MEDIDA_ALTURA_MIN):
             d = cone.d_solida_w * cw
@@ -665,10 +731,33 @@ class ConeAvoider:
             return self._w_mem, True
         if lane is None or not lane.hw_px:
             return None, False
-        self.conf = config.CONE_CONF_GEO
+        w = self._w_geometrico(cone, lane, grava=True)
+        if w is None:
+            return None, False
+        # confianca sobe com o numero de estimativas (o cone e fixo: a
+        # mediana de varias e bem melhor que uma so)
+        n = len(self._w_geo)
+        self.conf = max(config.CONE_CONF_GEO, min(1.0, 0.4 + 0.2 * n))
+        return w, False
+
+    def _w_geometrico(self, cone, lane, grava):
+        """Posicao lateral do cone (cm do centro da pista, + = direita) pela
+        geometria: onde o carro esta + o quanto o cone esta ao lado dele.
+        Mediana das ultimas estimativas (o cone e fixo)."""
+        if lane is None or not lane.hw_px or lane.lane_center_x is None:
+            return None
+        lw, cw = config.PISTA_LARGURA_CM, config.CONE_LARGURA_CM
         car_x = config.CAMERA_RES[0] * config.CAR_CENTER_PCT
         w_car = -((lane.lane_center_x - car_x) / lane.hw_px) * (lw / 2.0)
-        return w_car + cone.lat * cw, False
+        w = w_car + cone.lat * cw
+        if cone.altura < config.CONE_MEDIDA_ALTURA_MIN:
+            return w                       # longe demais: so referencia
+        if grava:
+            self._w_geo.append(w)
+            if len(self._w_geo) > 25:
+                self._w_geo.pop(0)
+            return float(np.median(self._w_geo))
+        return float(np.median(self._w_geo + [w]))
 
     def _offset_posicao(self, cone, lane):
         """Deslocamento (unidades do erro da pista) que poe o ALVO do carro a
@@ -775,6 +864,9 @@ class ConeAvoider:
             self._lado_medido = False
             self._w_mem = None
             self._w_obs = []
+            self._w_geo = []
+            self._w_lane = None
+            self._w_lane_obs = []
             self.prox = 0.0
             self.larg = 0.0
             self.ativo = False
