@@ -201,16 +201,23 @@ CONE_ZONA_CENTRO  = 0.06   # |x| menor que isso = "bem no meio": usa o lado padr
 CONE_LADO_PADRAO  = "direita"   # por onde passa quando nao da pra saber
 
 # ---- de que lado DA PONTILHADA o cone esta (MEDIR NA PISTA REAL) ----
-# Regra: cone DENTRO da faixa do carro (do lado da continua) -> o carro
-# cruza a pontilhada. Cone na outra faixa -> o carro se afasta dele, pro
-# lado da continua. Pra comparar as duas cameras usa-se centimetros: a
-# largura do cone e a regua da camera de cone; a largura da faixa e a da
-# camera de pista.
+# Regra: cone DENTRO da faixa do carro (entre a pontilhada e a continua) ->
+# o carro cruza a pontilhada. Cone na outra faixa -> o carro se afasta dele,
+# pro lado da continua.
+# Como se sabe: na imagem da camera de cone, mede-se a distancia do cone ate
+# a faixa CONTINUA (em larguras de cone, na altura da base do cone). Se ela e
+# menor que a largura da faixa, o cone esta dentro da faixa do carro.
 CONE_LARGURA_CM  = 18.0    # largura da BASE do cone no chao (meça!)
 PISTA_LARGURA_CM = 60.0    # distancia entre a pontilhada e a continua (meça!)
-CONE_CAM_OFFSET_CM = 0.0   # camera de cone fora do eixo do carro: + = pra direita
-CONE_NA_LINHA_CM = 9.0     # |dist ate a pontilhada| menor que isso = "em cima
-                           # da linha": decide pelo lado com mais espaco
+CONE_NA_LINHA_CM = 9.0     # a menos disso da pontilhada = "em cima da linha":
+                           # decide pelo lado com mais espaco
+CONE_LINHA_TOPHAT_MIN = 15      # contraste minimo de uma linha na camera de cone
+CONE_LINHA_PRESENCA   = 0.75    # fracao das linhas da faixa em que a linha
+                                # tem que aparecer pra contar como CONTINUA
+CONE_TROCA_PERSISTE_S = 0.30    # a regra tem que discordar por esse tempo
+                                # pra o carro trocar de lado (medida ruidosa)
+CONE_PISTA_DILATA_PX  = 21      # tira o cone da mascara da camera de PISTA
+                                # (reflexos do plastico viravam "faixa"); 0 desliga
 CONE_GANHO        = 1.0
 CONE_OFFSET_MAX   = 2.00   # teto do deslocamento somado ao erro. ALTO de
                            # proposito: com a pista puxando -0.8 e o cone
@@ -229,7 +236,8 @@ CONE_CRUZAR_FRAC = 1.0
 # Rede de seguranca enquanto calibra: cone BEM na frente e quase encostando
 # (altura relativa ou base cortada) -> para o carro em vez de bater.
 # 0.0 desliga.
-CONE_PARAR_ALTURA = 0.50
+CONE_PARAR_ALTURA = 0.0    # DESLIGADA: parava em cima do cone sem desviar.
+                           # Se quiser a rede de seguranca: 0.50
 CONE_TROCA_LADO_ALTURA_MAX = 0.25   # so troca de lado no meio da manobra se o
                                     # cone ainda esta mais longe que isso
 CONE_PARAR_X      = 0.50   # so conta se o cone esta nesse corredor central
@@ -242,7 +250,6 @@ CONE_SEGURAR_S       = 1.20   # cone estava perto: mantem o desvio por esse temp
 CONE_SEGURAR_LONGE_S = 0.15   # cone estava longe: so tolera falha de deteccao
 CONE_DECAI_S         = 0.80   # depois disso, volta ao normal gradualmente
 CONE_RECONHECE_S     = 0.25   # sumiu por mais que isso -> proximo cone e outro
-CONE_TROCA_CX        = 0.35   # salto de x entre frames -> trata como outro cone
 
 CONE_FREIO_MAX    = 0.25   # reduz ate 25% da velocidade com cone bem perto
 CONE_FRAME_VELHO_S = 0.5   # frame da camera de cone mais velho que isso = ignora

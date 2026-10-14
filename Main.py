@@ -83,7 +83,11 @@ def main():
                 if f_cone is None or idade > config.CONE_FRAME_VELHO_S:
                     cone = None
                 elif idx != cone_idx:
-                    cone = cones.process(f_cone, debug=DEBUG)
+                    # de que lado esta a faixa CONTINUA (a regra do desvio
+                    # mede a distancia do cone ate ela, na imagem do cone)
+                    sc = res.sinal_continuo
+                    lado_s = 1 if sc > 0.5 else (-1 if sc < -0.5 else 0)
+                    cone = cones.process(f_cone, debug=DEBUG, lado_solida=lado_s)
                     cone_idx = idx
             t2 = time.time()
 
@@ -127,10 +131,14 @@ def main():
                     else:
                         v = "fora da visao (segurando)"
                     aviso = "  <<< PARADO: cone na frente" if desvio.parar else ""
-                    if desvio.dist_pont_cm is not None:
-                        d = desvio.dist_pont_cm
-                        onde = ("DIREITA" if d > 0 else "ESQUERDA")
-                        aviso = f" | cone {abs(d):.0f}cm a {onde} da pontilhada" + aviso
+                    if desvio.dist_cont_cm is not None:
+                        onde = ("na SUA faixa" if desvio.na_faixa
+                                else ("na OUTRA faixa" if desvio.na_faixa is False
+                                      else "em cima da pontilhada"))
+                        aviso = (f" | {desvio.dist_cont_cm:.0f}cm da continua "
+                                 f"({onde})") + aviso
+                    else:
+                        aviso = " | continua nao vista" + aviso
                     print(f"  [desvio] {v} | pista {res.error:+.2f} "
                           f"desvio {offset:+.2f} -> turn {turn:+.2f} "
                           f"vel {speed:.2f} | lado {desvio.lado:+d}{aviso}")

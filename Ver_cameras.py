@@ -63,6 +63,7 @@ class Analise:
         self.vision = LaneVision()
         self.cones = ConeVision()
         self.idx_p = self.idx_c = -1
+        self.sinal = 0.0        # ultimo sinal_continuo visto pela camera de pista
         self._fps = {"p": [0.0, 0, time.time()], "c": [0.0, 0, time.time()]}
 
     def _fps_tick(self, k):
@@ -81,6 +82,7 @@ class Analise:
         f = cv2.resize(f, config.CAMERA_RES)
         r = self.vision.process(f, debug=True)
         fps = self._fps_tick("p")
+        self.sinal = r.sinal_continuo
         lado = r.lado_continuo or "?"
         cor = (0, 255, 255) if r.valid else (0, 0, 255)
         linhas = [f"PISTA  {fps:.0f}fps  erro {r.error:+.2f}  "
@@ -95,11 +97,21 @@ class Analise:
         if f is None or i == self.idx_c:
             return None
         self.idx_c = i
-        r = self.cones.process(f, debug=True)
+        lado_s = 1 if self.sinal > 0.5 else (-1 if self.sinal < -0.5 else 0)
+        r = self.cones.process(f, debug=True, lado_solida=lado_s)
         fps = self._fps_tick("c")
         if r.found:
+            if r.d_solida_w is not None:
+                d_cm = r.d_solida_w * config.CONE_LARGURA_CM
+                faixa = ("na SUA faixa" if r.d_solida_w <
+                         config.PISTA_LARGURA_CM / config.CONE_LARGURA_CM
+                         else "na OUTRA faixa")
+                cont = f"continua a {d_cm:.0f}cm ({faixa})"
+            else:
+                cont = "continua nao vista"
             linhas = [f"CONE  {fps:.0f}fps  x {r.cx:+.2f}  lat {r.lat:+.1f}w",
-                      f"altura {r.altura:.2f}  prox {r.proximidade:.2f}"]
+                      f"altura {r.altura:.2f}  prox {r.proximidade:.2f}",
+                      cont]
             cor = (0, 255, 0)
         else:
             linhas = [f"CONE  {fps:.0f}fps  nao visto  cand {r.n_candidatos}"]

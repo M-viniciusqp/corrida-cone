@@ -137,6 +137,21 @@ class LaneVision:
         self.last_thr = thr
         self.white_frac = mask.mean() / 255.0
 
+        # tira cones da mascara: o plastico brilhante tem reflexos brancos e
+        # pouco saturados que passavam por "faixa" e bagunçavam o erro bem na
+        # hora do desvio. Dilata um pouco pra pegar o reflexo na borda.
+        if config.CONE_PISTA_DILATA_PX > 0:
+            s_min, v_min = config.CONE_S_MIN, config.CONE_V_MIN
+            red = cv2.bitwise_or(
+                cv2.inRange(hsv, (0, s_min, v_min),
+                            (config.CONE_H_BAIXO, 255, 255)),
+                cv2.inRange(hsv, (config.CONE_H_ALTO, s_min, v_min),
+                            (179, 255, 255)))
+            if red.any():
+                k = config.CONE_PISTA_DILATA_PX
+                red = cv2.dilate(red, np.ones((k, k), np.uint8))
+                mask[red > 0] = 0
+
         mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, self._k_open)
         mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, self._k_close)
         return mask
