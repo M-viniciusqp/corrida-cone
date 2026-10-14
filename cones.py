@@ -157,6 +157,7 @@ class ConeAvoider:
         self.prox = 0.0            # proximidade do cone em uso (p/ freio e HUD)
         self.ativo = False
         self.parar = False         # cone colado na frente: Main zera a velocidade
+        self.dist_pont_cm = None   # + = cone a DIREITA da pontilhada (None = n/d)
 
         self._alvo = 0.0           # ultimo deslocamento "bruto" com cone visivel
         self._t_visto = None       # quando viu cone pela ultima vez
@@ -170,6 +171,7 @@ class ConeAvoider:
         self.prox = 0.0
         self.ativo = False
         self.parar = False
+        self.dist_pont_cm = None
         self._alvo = 0.0
         self._t_visto = None
         self._prox_visto = 0.0
@@ -249,6 +251,8 @@ class ConeAvoider:
         cruzar). Se o preferido nao cabe e o outro cabe, usa o outro.
         Fica travado no mesmo cone; so troca se virar inviavel."""
         sobra = self._sobras(cone, e_pista, lane)
+        # a cada frame (alimenta o log mesmo com o lado ja travado)
+        pref_pont = self._lado_pela_pontilhada(cone, lane, sobra)
 
         novo = (self.lado == 0 or self._t_visto is None or
                 agora - self._t_visto > config.CONE_RECONHECE_S or
@@ -263,14 +267,11 @@ class ConeAvoider:
                 self.lado = -self.lado
             return
 
-        if abs(cone.cx) >= config.CONE_ZONA_CENTRO:
-            pref = -1 if cone.cx < 0 else 1
-        else:
-            s = getattr(lane, "sinal_continuo", 0.0) if lane is not None else 0.0
-            if s > 0.5:        # continua a direita -> pontilhada a esquerda
-                pref = 1       # passa pela ESQUERDA (cone fica a direita)
-            elif s < -0.5:
-                pref = -1
+        pref = pref_pont
+        if pref is None:
+            # sem referencia da pontilhada: cai na posicao do cone na imagem
+            if abs(cone.cx) >= config.CONE_ZONA_CENTRO:
+                pref = -1 if cone.cx < 0 else 1
             else:
                 pref = -1 if config.CONE_LADO_PADRAO == "direita" else 1
 
@@ -278,6 +279,43 @@ class ConeAvoider:
             self.lado = pref
         else:
             self.lado = -pref
+
+    def _lado_pela_pontilhada(self, cone, lane, sobra):
+        """Regra do usuario: de que lado DA PONTILHADA o cone esta?
+
+        Cone dentro da faixa do carro (entre a pontilhada e a continua)
+        -> carro cruza a pontilhada.
+        Cone na outra faixa -> carro se afasta, indo pro lado da continua.
+
+        Retorna lado (-1 = passa pela direita, +1 = pela esquerda) ou None
+        se nao ha referencia confiavel (sem pista/continua indefinida)."""
+        self.dist_pont_cm = None
+        if lane is None or lane.hw_px is None:
+            return None
+        s = getattr(lane, "sinal_continuo", 0.0)
+        if abs(s) < 0.5:
+            return None
+
+        dashed_esq = s > 0                  # continua a direita -> pontilhada a esquerda
+        car_x = config.CAMERA_RES[0] * config.CAR_CENTER_PCT
+        dashed_x = lane.lane_center_x + (-lane.hw_px if dashed_esq else lane.hw_px)
+
+        # posicao lateral (cm, + = direita do carro) das duas coisas
+        pont_cm = (dashed_x - car_x) / lane.hw_px * (config.PISTA_LARGURA_CM / 2.0)
+        cone_cm = cone.lat * config.CONE_LARGURA_CM + config.CONE_CAM_OFFSET_CM
+        delta = cone_cm - pont_cm           # + = cone a direita da pontilhada
+        self.dist_pont_cm = delta
+
+        if abs(delta) < config.CONE_NA_LINHA_CM:
+            # em cima da linha: vai pro lado com mais espaco
+            return -1 if sobra[-1] >= sobra[+1] else 1
+
+        na_minha_faixa = (delta > 0) if dashed_esq else (delta < 0)
+        if na_minha_faixa:
+            # cruza a pontilhada: esquerda se ela e a esquerda, senao direita
+            return 1 if dashed_esq else -1
+        # cone na outra faixa: afasta pro lado da continua
+        return -1 if dashed_esq else 1
 
     def _deslocamento(self, cone, e_pista):
         """Quanto ACIMA do erro da pista o alvo precisa ir pra cumprir a folga.

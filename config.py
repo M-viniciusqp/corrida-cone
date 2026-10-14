@@ -198,9 +198,24 @@ CONE_CORREDOR     = 0.95   # so reage a cone com |x| menor que isso (-1..+1)
 # + folga. Raspou no cone -> suba. Desviando demais -> desca.
 CONE_FOLGA_LARGURAS = 1.6
 CONE_ZONA_CENTRO  = 0.06   # |x| menor que isso = "bem no meio": usa o lado padrao
-CONE_LADO_PADRAO  = "direita"   # por onde passa quando o cone esta centrado
+CONE_LADO_PADRAO  = "direita"   # por onde passa quando nao da pra saber
+
+# ---- de que lado DA PONTILHADA o cone esta (MEDIR NA PISTA REAL) ----
+# Regra: cone DENTRO da faixa do carro (do lado da continua) -> o carro
+# cruza a pontilhada. Cone na outra faixa -> o carro se afasta dele, pro
+# lado da continua. Pra comparar as duas cameras usa-se centimetros: a
+# largura do cone e a regua da camera de cone; a largura da faixa e a da
+# camera de pista.
+CONE_LARGURA_CM  = 18.0    # largura da BASE do cone no chao (meça!)
+PISTA_LARGURA_CM = 60.0    # distancia entre a pontilhada e a continua (meça!)
+CONE_CAM_OFFSET_CM = 0.0   # camera de cone fora do eixo do carro: + = pra direita
+CONE_NA_LINHA_CM = 9.0     # |dist ate a pontilhada| menor que isso = "em cima
+                           # da linha": decide pelo lado com mais espaco
 CONE_GANHO        = 1.0
-CONE_OFFSET_MAX   = 0.80   # maximo de deslocamento somado ao erro
+CONE_OFFSET_MAX   = 2.00   # teto do deslocamento somado ao erro. ALTO de
+                           # proposito: com a pista puxando -0.8 e o cone
+                           # exigindo +0.6, o desvio precisa ser 1.4. Quem
+                           # limita de verdade sao as bordas da pista.
 CONE_OFFSET_SUAVIZACAO = 0.5   # EMA do deslocamento
 CONE_OFFSET_SLEW  = 6.0    # maximo que o deslocamento varia (erro/segundo)
 

@@ -127,6 +127,10 @@ def main():
                     else:
                         v = "fora da visao (segurando)"
                     aviso = "  <<< PARADO: cone na frente" if desvio.parar else ""
+                    if desvio.dist_pont_cm is not None:
+                        d = desvio.dist_pont_cm
+                        onde = ("DIREITA" if d > 0 else "ESQUERDA")
+                        aviso = f" | cone {abs(d):.0f}cm a {onde} da pontilhada" + aviso
                     print(f"  [desvio] {v} | pista {res.error:+.2f} "
                           f"desvio {offset:+.2f} -> turn {turn:+.2f} "
                           f"vel {speed:.2f} | lado {desvio.lado:+d}{aviso}")
