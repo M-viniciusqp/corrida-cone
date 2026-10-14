@@ -333,7 +333,7 @@ CONE_CRUZAR_FRAC = 0.8
 # Rede de seguranca enquanto calibra: cone BEM na frente e quase encostando
 # (altura relativa ou base cortada) -> para o carro em vez de bater.
 # 0.0 desliga.
-CONE_PARAR_ALTURA = 0.50   # PARA a ~50 cm. Cone de 25 cm: altura = 25*f/(dist*240), f~240px -> 0.50 a 50 cm. Calibre pelo "alt" no log
+CONE_PARAR_ALTURA = 0.28   # PARA a ~90 cm. Cone de 25 cm: altura = 25*f/(dist*240), f~240px -> 0.28 a 90 cm. Calibre pelo "alt" no log
                            # Se quiser a rede de seguranca: 0.50
 CONE_TROCA_LADO_ALTURA_MAX = 0.25   # so troca de lado no meio da manobra se o
                                     # cone ainda esta mais longe que isso
