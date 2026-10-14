@@ -333,11 +333,11 @@ CONE_CRUZAR_FRAC = 0.8
 # Rede de seguranca enquanto calibra: cone BEM na frente e quase encostando
 # (altura relativa ou base cortada) -> para o carro em vez de bater.
 # 0.0 desliga.
-CONE_PARAR_ALTURA = 0.0    # DESLIGADA: parava em cima do cone sem desviar.
+CONE_PARAR_ALTURA = 0.50   # PARA quando o cone fica a ~30 cm (altura ~0.50; calibre: ver "alt" no log)
                            # Se quiser a rede de seguranca: 0.50
 CONE_TROCA_LADO_ALTURA_MAX = 0.25   # so troca de lado no meio da manobra se o
                                     # cone ainda esta mais longe que isso
-CONE_PARAR_X      = 0.50   # so conta se o cone esta nesse corredor central
+CONE_PARAR_X      = 0.60   # so conta se o cone esta nesse corredor central
 CONE_MARGEM_PISTA = 0.15   # fracao da meia-largura que NAO invade da borda
 
 # Memoria: o cone some do campo de visao ANTES do carro terminar de passar
