@@ -60,10 +60,22 @@ SCAN_TOP_PCT    = 0.35
 SCAN_ROWS       = 14
 SCAN_MIN_RUN_PX = 4
 SCAN_MIN_ROWS   = 6
+SCAN_MIN_CENTROS = 3     # centros minimos pra aceitar a leitura. Com so a
+                         # pontilhada visivel (carro em cima dela, a continua
+                         # fora do campo) so ha centro onde tem traco: 3 a 6
+                         # fileiras. Com 6 isso virava 'perdido' toda vez que
+                         # o carro cruzava a pontilhada pra desviar.
 SCAN_HW_MIN     = 25
 SCAN_HW_MAX     = 160
 SCAN_PESO_LONGE = 2.0
+SCAN_HW_TOL     = 0.45   # par de linhas so vale se a largura bate com a da
+                         # faixa aprendida (+-45%)
 SCAN_TRACK_WINDOW = 95
+
+ALVO_MARGEM_PCT = 0.5   # o alvo pode cair ate 50% da largura da imagem pra fora
+                       # (antes: 0% -> 'alvo_fora_da_tela' zerava o rastreio quando
+                       # o carro estava a ~meia faixa do centro, ex. cruzando a
+                       # pontilhada pra desviar de cone)
 
 HEADING_MAX          = 1.2
 HEADING_SUAVIZACAO   = 0.55
@@ -119,6 +131,15 @@ DEAD_ZONE = 0.04
 # =====================================================================
 MAX_FRAMES_PERDIDO = 12
 
+# Durante/logo apos um desvio de cone a visao de pista perde a leitura por um
+# instante com frequencia (a continua sai do campo, so ha traco da pontilhada).
+# Decair o esterco e parar em 12 quadros (0.4 s) derrubava o carro bem no meio
+# da manobra. Nesse periodo: segura o ultimo esterco, anda numa velocidade
+# segura, e tolera ~2 s sem leitura.
+MAX_FRAMES_PERDIDO_DESVIO   = 60
+VELOCIDADE_PERDIDO_DESVIO   = 0.32
+TURN_DECAI_PERDIDO_DESVIO   = 0.985
+
 # =====================================================================
 # 9. VIES DE FAIXA - andar mais perto da faixa PONTILHADA que do centro
 # =====================================================================
@@ -129,6 +150,25 @@ LANE_BIAS_LIMITE = 0.90     # subiu de 0.80 -- abriu mais espaco pro vies.
                             # momentanea de deteccao do pontilhado vira erro
                             # grande rapido, porque o alvo ja esta quase
                             # colado nele.
+
+# De que lado fica a faixa CONTINUA na sua pista: "direita", "esquerda" ou
+# None (aprende sozinho olhando qual lado tem buracos).
+# Fixo e MUITO mais seguro agora que o carro cruza a pontilhada pra desviar:
+# no meio da manobra a linha externa do outro lado (tambem continua) parecia
+# "a continua" pra visao, ela travava o lado errado e puxava o carro pra
+# outra faixa. Se um dia rodar o percurso no sentido contrario, troque.
+LADO_CONTINUO_FIXO = "direita"
+
+# Faixa OPOSTA: depois de cruzar a pontilhada pra desviar, a camera de pista
+# ve [linha externa do outro lado] + [pontilhada]. Essa dupla tem a MESMA
+# largura de uma faixa, entao a visao a tomava por "a faixa" e puxava o carro
+# pro centro da outra faixa. Um centro de faixa nao pode pular uma faixa
+# inteira de um quadro pro outro: durante/logo apos um desvio, escolhe-se o
+# centro (bruto ou +-2*hw) mais coerente com o quadro anterior. No uso normal
+# (sem desvio) isso nunca liga, entao nao muda o comportamento de antes.
+FAIXA_OPOSTA_JANELA = 90       # quadros (~3 s) apos o desvio em que ainda vale
+FAIXA_OPOSTA_GATE   = 0.9      # o centro corrigido tem que cair a menos de
+                               # GATE*hw do centro do quadro anterior
 
 LADO_CONTINUO_SUAVIZACAO = 0.93
 LADO_CONTINUO_MARGEM     = 0.15
@@ -192,13 +232,22 @@ CONE_ALTURA_PERTO = 0.09   # proximidade 1.0 (desvio total). Baixo de
 
 # ---- desvio ----
 CONE_CORREDOR     = 0.95   # so reage a cone com |x| menor que isso (-1..+1)
-# Folga lateral medida em LARGURAS DE CONE (nao em pixels da imagem!).
-# x=0.45 na imagem e muito lado a 2m e quase nada a 40cm; largura de cone
-# escala com a distancia. 1.6 largura ~ meia largura do carro + raio do cone
-# + folga. Raspou no cone -> suba. Desviando demais -> desca.
-CONE_FOLGA_LARGURAS = 1.6
+# Folga lateral CENTRO DO CARRO -> CENTRO DO CONE, em cm da pista (MEDIR):
+#   metade da largura do carro + metade da largura do cone + margem
+# A margem cobre o erro de controle e de medida (no simulador o carro
+# raspava com margem de ~4 cm e passava com ~8 cm). Raspou no cone -> suba
+# CONE_MARGEM_CM. Desviando fundo demais pra outra faixa -> desca.
+CARRO_LARGURA_CM = 20.0    # largura do carro (rodas externas)
+CONE_MARGEM_CM   = 11.0
+
+# Ganho do esterco do desvio. A lei e "pure pursuit": a curvatura necessaria
+# pra passar por um ponto ao lado do cone cresce com 1/distancia^2, entao o
+# mesmo erro de direcao exige MUITO mais volante com o cone perto. A largura
+# do cone na imagem e proporcional a 1/distancia, entao ganho ~ K * largura.
+# Nunca menor que PID_KP. Raspou/bateu com o cone perto -> suba.
 CONE_ZONA_CENTRO  = 0.06   # |x| menor que isso = "bem no meio": usa o lado padrao
-CONE_LADO_PADRAO  = "direita"   # por onde passa quando nao da pra saber
+CONE_LADO_PADRAO  = "esquerda"  # por onde passa quando nao da pra saber
+                                # (a pontilhada fica a esquerda na sua pista)
 
 # ---- de que lado DA PONTILHADA o cone esta (MEDIR NA PISTA REAL) ----
 # Regra: cone DENTRO da faixa do carro (entre a pontilhada e a continua) ->
@@ -212,29 +261,51 @@ PISTA_LARGURA_CM = 29.0    # MEDIDO na pista: cone em cima da pontilhada -> a
                            # janela CONE leu 'continua a 29cm'. (Em cm so
                            # se o cone tiver mesmo CONE_LARGURA_CM; o que
                            # vale e a razao entre os dois.)
+CONE_FOLGA_CM = CARRO_LARGURA_CM / 2.0 + CONE_LARGURA_CM / 2.0 + CONE_MARGEM_CM
+CONE_FOLGA_LARGURAS = CONE_FOLGA_CM / CONE_LARGURA_CM    # (modo reserva)
 CONE_NA_LINHA_CM = 5.0     # a menos disso da pontilhada = "em cima da linha":
                            # decide pelo lado com mais espaco
 CONE_LINHA_TOPHAT_MIN = 15      # contraste minimo de uma linha na camera de cone
+CONE_PALPITE_FORA_W = 0.3       # palpite (cone longe): o cone so conta como 'na outra
+                                # faixa' se passar do centro da pista por mais que a
+                                # meia-faixa + isso (em larguras de cone)
+CONE_MEDIDA_ALTURA_MIN = 0.06   # a distancia ate a continua so vale com o cone pelo
+                                # menos desse tamanho (medido no simulador: erro de
+                                # 1-2 cm ja a partir de 0.08, ~2.5 m)
+CONE_MEDIDA_ALTURA_MAX = 0.30   # acima disso (cone muito perto) a medida piora, em
+                                # curva principalmente: so se usa se nao ha outra
+CONE_CONF_GEO = 0.5             # peso do deslocamento quando so ha a estimativa
+                                # geometrica (nunca se mediu a posicao do cone)
 CONE_LINHA_PRESENCA   = 0.75    # fracao das linhas da faixa em que a linha
                                 # tem que aparecer pra contar como CONTINUA
-CONE_TROCA_PERSISTE_S = 0.30    # a regra tem que discordar por esse tempo
+CONE_TROCA_PERSISTE_S = 0.45    # a regra tem que discordar por esse tempo
                                 # pra o carro trocar de lado (medida ruidosa)
 CONE_PISTA_DILATA_PX  = 21      # tira o cone da mascara da camera de PISTA
                                 # (reflexos do plastico viravam "faixa"); 0 desliga
 CONE_GANHO        = 1.0
+CONE_ESTERCO_GANHO = 2.0
+CONE_GANHO_POS    = 1.0   # modo 'posicao lateral': esterco = KP * isto * deslocamento
+CONE_MARGEM_CONT_CM = 7.0 # o centro do carro fica a pelo menos isso da continua
+CONE_OFFSET_NO_PID = False   # False: o deslocamento entra no ERRO do PID (D amortece)
+                             # True : entra depois do PID (sem passar pelo D)
 CONE_OFFSET_MAX   = 2.00   # teto do deslocamento somado ao erro. ALTO de
                            # proposito: com a pista puxando -0.8 e o cone
                            # exigindo +0.6, o desvio precisa ser 1.4. Quem
                            # limita de verdade sao as bordas da pista.
 CONE_OFFSET_SUAVIZACAO = 0.5   # EMA do deslocamento
-CONE_OFFSET_SLEW  = 6.0    # maximo que o deslocamento varia (erro/segundo)
+CONE_OFFSET_SLEW  = 1.5    # maximo que o deslocamento varia (erro/segundo). 1 unidade
+                           # de erro ~ 29 cm de alvo na faixa: 1.5/s = ~40 cm/s, o
+                           # que o carro consegue acompanhar (antes 6.0 era um degrau)
+CONE_RETORNO_SLEW = 0.35   # idem, mas VOLTANDO pro centro da faixa (erro/segundo ~ 10 cm/s)
+CONE_COMPROMISSO_ALTURA = 0.35   # cone assim de perto = o carro esta passando por ele;
+                                # um cone novo nao derruba o desvio dele ate terminar
 
 # A faixa PONTILHADA pode ser cruzada (e o lado da ultrapassagem); a CONTINUA
 # nao. Com isso ligado, o limite do desvio do lado da pontilhada passa pra
 # alem dela por CONE_CRUZAR_FRAC meias-larguras. Se desligar, o carro nunca
 # sai da propria faixa (e em pista estreita pode nao conseguir passar).
 CONE_PODE_CRUZAR_PONTILHADA = True
-CONE_CRUZAR_FRAC = 1.0
+CONE_CRUZAR_FRAC = 0.8
 
 # Rede de seguranca enquanto calibra: cone BEM na frente e quase encostando
 # (altura relativa ou base cortada) -> para o carro em vez de bater.
@@ -251,7 +322,7 @@ CONE_MARGEM_PISTA = 0.15   # fracao da meia-largura que NAO invade da borda
 CONE_SEGURAR_S       = 1.20   # cone estava perto: mantem o desvio por esse tempo
                               # (tem que cobrir o carro INTEIRO passando)
 CONE_SEGURAR_LONGE_S = 0.15   # cone estava longe: so tolera falha de deteccao
-CONE_DECAI_S         = 0.80   # depois disso, volta ao normal gradualmente
+CONE_DECAI_S         = 0.30   # depois disso, volta ao normal gradualmente
 CONE_RECONHECE_S     = 0.25   # sumiu por mais que isso -> proximo cone e outro
 
 CONE_FREIO_MAX    = 0.25   # reduz ate 25% da velocidade com cone bem perto

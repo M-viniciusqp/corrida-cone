@@ -1,34 +1,42 @@
 """
 cones.py - deteccao de cones (camera frontal) e desvio.
 
-Duas pecas, igual o resto do projeto (cada uma faz uma coisa):
+Duas pecas:
 
   ConeVision   : frame da camera de cone -> ConeResult (onde esta o cone mais
                  perigoso, o quao perto ele esta e a que distancia da faixa
                  CONTINUA ele fica). Nao sabe nada de motor.
 
-  ConeAvoider  : ConeResult + leitura da pista -> um DESLOCAMENTO somado ao
-                 erro lateral. Nao troca o controle: o carro continua seguindo
-                 a faixa pelo mesmo PID.
+  ConeAvoider  : ConeResult + leitura da pista -> um DESLOCAMENTO do alvo da
+                 pista. O carro continua seguindo a faixa pelo mesmo PID; o
+                 cone so diz "onde, na faixa, o alvo deve ficar".
 
-Como o desvio COMPOE com a pista (importante):
-  NAO e erro_pista + desvio. Assim a pista, querendo ir pra esquerda, ainda
-  puxava o carro pra cima de um cone que estava a esquerda. O desvio e um
-  PISO: o alvo final nunca pode ficar do lado errado do cone.
-      passa pela direita : alvo_final = max(erro_pista, x_cone + folga)
-      passa pela esquerda: alvo_final = min(erro_pista, x_cone - folga)
-  Se a pista ja quer ir pro lado seguro, o desvio e zero e nao atrapalha.
+COMO O DESVIO FUNCIONA (lei de POSICAO lateral, em cm da faixa)
+  1. Mede-se onde o cone esta na faixa: distancia dele ate a faixa CONTINUA
+     (ConeVision._dist_solida), na imagem do cone, na altura da base dele.
+     Como o cone e FIXO, essa posicao (cm a partir do centro da faixa) e a
+     mesma o tempo todo; usa-se a mediana das medidas feitas de longe.
+  2. Regra do usuario: cone DENTRO da faixa do carro -> cruza a pontilhada;
+     cone na OUTRA faixa -> se afasta, pro lado da continua.
+  3. Alvo lateral = posicao do cone -/+ CONE_FOLGA_CM (meia largura do carro
+     + meia do cone + margem), limitado pelas bordas (nao passa da continua e
+     nao vai longe demais pra outra faixa).
+  4. O deslocamento (alvo desejado - onde o alvo da pista esta hoje) e somado
+     ao ERRO da pista e passa pelo PID; e um PISO: so empurra pra longe do
+     cone. Depois que o cone passa, o deslocamento volta DEVAGAR a zero.
 
-Por qual lado passa (regra do usuario):
-  - cone DENTRO da faixa do carro (entre a pontilhada e a continua)
-        -> cruza a pontilhada (a pontilhada pode ser cruzada);
-  - cone na OUTRA faixa (do outro lado da pontilhada)
-        -> se afasta, indo pro lado da continua.
-  Pra saber de que lado da pontilhada o cone esta, mede-se NA MESMA IMAGEM a
-  distancia do cone ate a faixa CONTINUA, em larguras de cone, na altura da
-  base do cone (ConeVision._dist_solida). Na mesma imagem e na mesma altura,
-  giro do carro e distancia se cancelam -- comparar posicoes entre as duas
-  cameras NAO funciona: qualquer giro vira erro de dezenas de cm.
+POR QUE NAO "MIRAR O CONE" (pure pursuit) E NAO COMPARAR AS 2 CAMERAS
+  - mirar um ponto ao lado do cone gira o carro cada vez mais forte e nao
+    para quando o cone passa;
+  - comparar posicoes entre a camera de pista e a de cone oscila com o giro
+    do carro (erro de dezenas de cm); a medida na MESMA imagem nao.
+
+DETALHES QUE IMPORTAM (cada um foi uma batida no simulador, ver sim/)
+  - a continua e a linha mais EXTERNA daquele lado (a pontilhada, de perto,
+    parece continua); a regua e a largura da faixa NA MESMA FILEIRA (em curva
+    a pista fica girada e a distancia horizontal e inflada por 1/cos);
+  - cone novo nao derruba o desvio de um cone que o carro ainda esta passando;
+  - o lado so troca se a medida discordar por um tempo, com o cone longe.
 
 Convencao de sinais (a mesma do erro da pista):
   x do cone: -1 = borda esquerda da imagem, +1 = borda direita.
@@ -234,32 +242,75 @@ class ConeVision:
 
         # x de cada linha na altura da base do cone
         r_base = y_base - y0
-        lim = 0.2 * w_ref
         pres = config.CONE_LINHA_PRESENCA
-        xs = []
+        todas = []                              # (x_na_base, presenca)
         for ln in linhas:
             n = len(ln["pts"])
             # a linha pode sair do quadro pela lateral nas fileiras de baixo:
             # nesse caso a presenca e contada so ate onde ela ainda aparece
             rows_ok = (ln["pts"][-1][0] + 1) if ln["borda"] else n_rows
-            if n < 5 or n / max(rows_ok, 1) < pres:
+            if n < 3:
                 continue
             rr = np.array([p[0] for p in ln["pts"]], dtype=float)
             cc = np.array([p[1] for p in ln["pts"]], dtype=float)
             if rr.max() - rr.min() >= 4:
                 a_, b_ = np.polyfit(rr, cc, 1)
-                x_b = a_ * r_base + b_ if abs(a_) <= 3.0 else float(cc.mean())
+                # com a camera baixa as linhas ficam quase deitadas (3-8 px de
+                # x por fileira): limite alto, senao a media das fileiras
+                # (longe da base) entrava no lugar da extrapolacao
+                x_b = a_ * r_base + b_ if abs(a_) <= 12.0 else float(cc.mean())
             else:
                 x_b = float(cc.mean())
-            xs.append(x_b)
+            todas.append((x_b, n / max(rows_ok, 1), n))
 
-        if lado > 0:
-            cands = [v for v in xs if v > xc + lim]
-        else:
-            cands = [v for v in xs if v < xc - lim]
-        if not cands:
+        lim = 0.2 * w_ref
+        sinal = 1.0 if lado > 0 else -1.0
+        # so conta linha a uma distancia plausivel: a continua fica, no
+        # maximo, a ~2 larguras de faixa do cone (cone na outra faixa).
+        d_max = 2.5 * config.PISTA_LARGURA_CM / config.CONE_LARGURA_CM
+        solidas = [x for (x, p, n) in todas
+                   if p >= pres and n >= 5 and (x - xc) * sinal > lim
+                   and abs(x - xc) / w_ref <= d_max * 2.0]
+        if not solidas:
             return None
-        return abs(min(cands, key=lambda v: abs(v - xc)) - xc) / w_ref
+        # a CONTINUA e a mais EXTERNA daquele lado. A pontilhada, de perto,
+        # tem tracos que se fundem e tambem passa por "presente em todas as
+        # fileiras"; pegar a mais proxima do cone confundia as duas.
+        x_s = max(solidas, key=lambda x: (x - xc) * sinal)
+        d_cone = abs(x_s - xc)
+
+        # REGUA = a propria largura da faixa NESSA fileira (pontilhada ate a
+        # continua), nao a largura do cone: em curva a pista fica girada em
+        # relacao a camera e uma linha horizontal da imagem cruza as linhas
+        # esticada por 1/cos(giro) -- as duas distancias sao inflacionadas
+        # igual, entao a RAZAO nao muda. Pontilhada = a linha mais proxima da
+        # continua do lado de dentro da faixa (presenca parcial: tem buracos).
+        larg_min = 0.9 * w_ref * (config.PISTA_LARGURA_CM / config.CONE_LARGURA_CM) * 0.5
+        exp_px = w_ref * (config.PISTA_LARGURA_CM / config.CONE_LARGURA_CM)
+        opcoes = []                 # (desvio_de_plausibilidade, largura_da_faixa_px)
+        for (x, p, n) in todas:
+            if (x_s - x) * sinal <= larg_min or n < 3:
+                continue
+            S = abs(x_s - x)
+            if p <= 0.9:
+                # tem buracos: e a PONTILHADA, a 1 faixa da continua
+                if p >= 0.15 and 0.8 <= S / exp_px <= 2.6:
+                    opcoes.append((abs(S / exp_px - 1.0) - 0.05, S))
+            else:
+                # linha continua do lado de dentro: ou e a pontilhada fundida
+                # (1 faixa) ou a linha EXTERNA do outro lado (2 faixas). Pega a
+                # interpretacao em que a largura da faixa fica mais proxima da
+                # esperada pela largura do cone (kappa ~ 1, ate ~2.6 em curva).
+                if 0.8 <= S / exp_px <= 2.6:
+                    opcoes.append((abs(S / exp_px - 1.0), S))
+                if 0.8 <= S / (2.0 * exp_px) <= 2.6:
+                    opcoes.append((abs(S / (2.0 * exp_px) - 1.0), S / 2.0))
+        if opcoes:
+            larg_faixa_px = min(opcoes)[1]
+            if larg_faixa_px > 1.0:
+                frac = d_cone / larg_faixa_px      # 0 = na continua, 1 = na pontilhada
+                return frac * (config.PISTA_LARGURA_CM / config.CONE_LARGURA_CM)
+        return d_cone / w_ref
 
     @staticmethod
     def _draw(frame, res):
@@ -289,6 +340,14 @@ class ConeAvoider:
         self.parar = False         # cone colado na frente: Main zera a velocidade
         self.na_faixa = None       # True = cone na faixa do carro, False = outra
         self.dist_cont_cm = None   # distancia do cone ate a continua (cm)
+        self.larg = 0.0            # largura do cone (x norm.) -> ganho do esterco
+        self._lado_medido = False  # o lado atual veio de MEDIDA (nao de palpite)
+        self.modo_pos = False      # True = lei de POSICAO lateral (cm na faixa)
+        self.w_alvo_cm = None      # onde o alvo do carro deve ficar (cm do centro)
+        self.w_cone_cm = None      # onde o cone esta (cm do centro da pista)
+        self._w_mem = None         # posicao MEDIDA deste cone (cm da pista)
+        self._w_obs = []           # medidas recentes (pra mediana)
+        self.conf = 1.0            # 1 = posicao medida, <1 = so estimativa
 
         self._alvo = 0.0           # ultimo deslocamento "bruto" com cone visivel
         self._t_visto = None       # quando viu cone pela ultima vez
@@ -305,6 +364,14 @@ class ConeAvoider:
         self.parar = False
         self.na_faixa = None
         self.dist_cont_cm = None
+        self.larg = 0.0
+        self._lado_medido = False
+        self.modo_pos = False
+        self.w_alvo_cm = None
+        self.w_cone_cm = None
+        self._w_mem = None
+        self._w_obs = []
+        self.conf = 1.0
         self._alvo = 0.0
         self._t_visto = None
         self._prox_visto = 0.0
@@ -321,6 +388,17 @@ class ConeAvoider:
         visivel = (cone is not None and cone.found and
                    abs(cone.cx) < config.CONE_CORREDOR)
 
+        # COMPROMISSO: o carro ainda esta passando um cone (chegou a ficar
+        # perto e o desvio dele ainda esta no periodo de "segurar"). Um cone
+        # NOVO e mais longe nao pode derrubar esse desvio agora: o carro
+        # soltaria o lado, voltaria pro centro e bateria no cone que ainda
+        # esta ao lado dele (a traseira ainda nao passou).
+        if (visivel and self._t_visto is not None and self._alt_ant is not None
+                and (agora - self._t_visto) < config.CONE_SEGURAR_S
+                and abs(self._alvo) > 0.08
+                and cone.altura < 0.8 * self._alt_ant):
+            visivel = False
+
         self.parar = False
         if visivel:
             e_pista = lane.error if lane is not None else 0.0
@@ -329,8 +407,19 @@ class ConeAvoider:
             # cresce sozinho com a aproximacao; a rampa so evita reagir a
             # ruido muito longe.
             rampa = 1.0 if cone.proximidade > 0.0 else 0.0
-            alvo = self._deslocamento(cone, e_pista) * rampa * config.CONE_GANHO
-            alvo = self._limitar_pela_pista(alvo, lane)
+            off_pos = self._offset_posicao(cone, lane)
+            if off_pos is not None:
+                # lei de POSICAO lateral (cm na faixa): o seguidor de faixa
+                # leva o carro suavemente ate la e volta sozinho depois
+                self.modo_pos = True
+                alvo = off_pos * rampa * config.CONE_GANHO * self.conf
+                alvo = max(-config.CONE_OFFSET_MAX, min(config.CONE_OFFSET_MAX, alvo))
+            else:
+                # reserva (sem pista/contínua conhecida): mira um ponto ao
+                # lado do cone, em direcao (pure pursuit)
+                self.modo_pos = False
+                alvo = self._deslocamento(cone, e_pista) * rampa * config.CONE_GANHO
+                alvo = self._limitar_pela_pista(alvo, lane)
 
             # rede de seguranca (desligada por padrao): cone colado BEM na
             # frente -> para
@@ -343,6 +432,7 @@ class ConeAvoider:
             self._prox_visto = cone.proximidade
             self._alt_ant = cone.altura
             self.prox = cone.proximidade
+            self.larg = cone.larg
             self.ativo = True
         else:
             alvo = self._sem_cone(agora)
@@ -353,11 +443,23 @@ class ConeAvoider:
         self._t_ant = agora
         b = config.CONE_OFFSET_SUAVIZACAO
         novo = b * self.offset + (1.0 - b) * alvo
-        passo = config.CONE_OFFSET_SLEW * dt
+        # indo: pode variar rapido (o carro precisa sair a tempo). VOLTANDO
+        # (modulo diminuindo): bem mais devagar -- o seguidor de faixa, feito
+        # pra erros pequenos, nao acompanha um alvo que "solta" 30 cm de uma
+        # vez e passa direto pela faixa (cruzava ate a continua).
+        voltando = abs(novo) < abs(self.offset)
+        taxa = config.CONE_RETORNO_SLEW if voltando else config.CONE_OFFSET_SLEW
+        passo = taxa * dt
         self.offset += max(-passo, min(passo, novo - self.offset))
         if abs(self.offset) < 0.005 and not self.ativo:
             self.offset = 0.0
         return self.offset
+
+    def ganho_esterco(self, kp):
+        """Ganho aplicado ao deslocamento (so no modo 'esterco extra')."""
+        if self.modo_pos:
+            return kp * config.CONE_GANHO_POS
+        return max(kp, config.CONE_ESTERCO_GANHO * self.larg)
 
     def fator_velocidade(self):
         """Multiplicador (<=1) da velocidade: desvia mais devagar."""
@@ -368,66 +470,79 @@ class ConeAvoider:
         return 1.0 - config.CONE_FREIO_MAX * self.prox * relevancia
 
     # ------------------------------------------------------------------
-    def _sobras(self, cone, e_pista, lane):
-        """Pra cada lado, quanto SOBRA de espaco depois de cumprir a folga
-        (negativo = nao cabe). Lado -1 = passa pela DIREITA (offset +),
-        lado +1 = passa pela ESQUERDA (offset -)."""
-        lo, hi = self._limites(lane)
-        folga = config.CONE_FOLGA_LARGURAS * cone.larg
-        precisa_dir = max(0.0, cone.cx + folga - e_pista)
-        precisa_esq = max(0.0, -(cone.cx - folga - e_pista))
-        return {-1: hi - precisa_dir, +1: (-lo) - precisa_esq}
+    def _lado_da_pontilhada(self, lane):
+        """Lado (-1 passa pela direita / +1 pela esquerda) que CRUZA a
+        pontilhada. None se nao se sabe qual lado e a pontilhada."""
+        s = getattr(lane, "sinal_continuo", 0.0) if lane is not None else 0.0
+        if s > 0.5:
+            return 1            # continua a direita -> pontilhada a esquerda
+        if s < -0.5:
+            return -1
+        return None
 
-    def _propor_lado(self, cone, lane, e_pista, sobra):
-        """Lado que a regra manda, frame a frame (sem travar)."""
+    def _propor_lado(self, cone, lane):
+        """-> (lado, medido). `medido` = veio da distancia ate a continua na
+        imagem do cone; senao e so um palpite inicial."""
         self.na_faixa = None
         self.dist_cont_cm = None
+        pont = self._lado_da_pontilhada(lane)
 
-        # 1) regra do usuario, medida NA IMAGEM DO CONE
-        if cone.d_solida_w is not None and cone.lado_solida != 0:
+        # 1) a regra do usuario, medida NA IMAGEM DO CONE
+        if (cone.d_solida_w is not None and cone.lado_solida != 0 and
+                cone.altura >= config.CONE_MEDIDA_ALTURA_MIN and
+                (cone.altura <= config.CONE_MEDIDA_ALTURA_MAX or self._w_mem is None)):
             d = cone.d_solida_w
             larg_pista = config.PISTA_LARGURA_CM / config.CONE_LARGURA_CM
             na_linha = config.CONE_NA_LINHA_CM / config.CONE_LARGURA_CM
             continua_dir = cone.lado_solida > 0
+            cruza = 1 if continua_dir else -1       # lado que cruza a pontilhada
             self.dist_cont_cm = d * config.CONE_LARGURA_CM
-
             if abs(d - larg_pista) < na_linha:
-                # em cima da pontilhada: vai pro lado com mais espaco
-                return -1 if sobra[-1] >= sobra[+1] else 1
+                # em cima da pontilhada: so cabe passando pelo lado de FORA
+                # da faixa (entre o cone e a continua nao cabe o carro)
+                return cruza, True
             self.na_faixa = d < larg_pista
             if self.na_faixa:
-                # cruza a pontilhada: esquerda se a continua e a direita
-                return 1 if continua_dir else -1
-            # na outra faixa: afasta, pro lado da continua
-            return -1 if continua_dir else 1
+                return cruza, True              # cone na faixa: cruza a pontilhada
+            return -cruza, True                 # cone na outra: afasta
 
-        # 2) sem a continua na imagem: o lado que a PROPRIA pista ja quer
-        # (alvo da pista a esquerda do cone -> passa pela esquerda). Compara
-        # so direcoes (bearing), entao nao sofre com giro do carro.
-        diff = e_pista - cone.cx
-        if abs(diff) >= config.CONE_ZONA_CENTRO:
-            return 1 if diff < 0 else -1
+        # 2) a continua nao esta na imagem agora, mas este cone ja foi medido
+        if self._w_mem is not None and pont is not None:
+            w = self._w_mem
+            larg_pista = config.PISTA_LARGURA_CM
+            continua_dir = pont > 0          # pont>0 -> pontilhada a esquerda
+            # coordenada "para dentro da faixa": + = em direcao a continua
+            dentro = w if continua_dir else -w
+            if dentro > -larg_pista / 2.0 - config.CONE_NA_LINHA_CM:
+                return pont, True            # na sua faixa (ou na linha): cruza
+            return -pont, True               # na outra faixa: afasta
 
-        # 3) empate: lado da pontilhada (e onde pode cruzar)
-        s = getattr(lane, "sinal_continuo", 0.0) if lane is not None else 0.0
-        if s > 0.5:
-            return 1
-        if s < -0.5:
-            return -1
-        return -1 if config.CONE_LADO_PADRAO == "direita" else 1
+        # 3) sem nenhuma medida: palpite geometrico
+        if pont is not None:
+            # posicao lateral do cone em relacao ao CENTRO da pista, em
+            # larguras de cone: o cone em largura de cone (lat) menos onde o
+            # centro da pista esta (hw_px normaliza a perspectiva).
+            if lane is not None and lane.hw_px:
+                car_x = config.CAMERA_RES[0] * config.CAR_CENTER_PCT
+                larg_pista = config.PISTA_LARGURA_CM / config.CONE_LARGURA_CM
+                centro_w = ((lane.lane_center_x - car_x) / lane.hw_px) * larg_pista / 2.0
+                delta = cone.lat - centro_w
+                # bem pra fora do lado da pontilhada = na OUTRA faixa
+                if abs(delta) > larg_pista * 0.5 + config.CONE_PALPITE_FORA_W:
+                    cone_pro_lado_da_pont = (delta < 0) == (pont > 0)
+                    if cone_pro_lado_da_pont:
+                        return -pont, False
+            return pont, False
+        return (-1 if config.CONE_LADO_PADRAO == "direita" else 1), False
 
     def _decidir_lado(self, cone, agora, e_pista, lane):
         """Mantem o lado ESTAVEL enquanto for o mesmo cone.
 
-        Uma proposta que discorda do lado atual so vence se persistir por
-        CONE_TROCA_PERSISTE_S (a medida e ruidosa e o carro balanca), e so
-        com o cone ainda longe -- trocar de lado colado e pior que seguir."""
-        sobra = self._sobras(cone, e_pista, lane)
-        prop = self._propor_lado(cone, lane, e_pista, sobra)
-
-        # a regra manda um lado onde nao cabe, mas o outro cabe: usa o outro
-        if sobra[prop] < -0.05 and sobra[-prop] >= 0.0:
-            prop = -prop
+        Medida nova que discorda do lado atual so vence se persistir por
+        CONE_TROCA_PERSISTE_S, e so com o cone ainda longe -- trocar de lado
+        colado e pior que seguir. Sem medida, nunca troca (so o palpite
+        inicial)."""
+        prop, medido = self._propor_lado(cone, lane)
 
         # e OUTRO cone? sumiu por um tempo, ou o mais alto mudou (o cone
         # que o carro acabou de passar saiu e apareceu um mais longe)
@@ -437,10 +552,16 @@ class ConeAvoider:
                   cone.altura < 0.65 * self._alt_ant))
         if outro:
             self.lado = prop
+            self._lado_medido = medido
             self._disc_t = None
+            self._w_mem = None      # a posicao medida era do cone anterior
+            self._w_obs = []
             return
 
-        if prop == self.lado:
+        # o lado atual era so um PALPITE (a faixa continua ainda nao tinha
+        # sido identificada): a primeira medida real o substitui na hora,
+        # mesmo com o cone ja perto -- o palpite errado e pior que trocar.
+        if not medido or prop == self.lado:
             self._disc_t = None
             return
 
@@ -449,14 +570,87 @@ class ConeAvoider:
         if (agora - self._disc_t >= config.CONE_TROCA_PERSISTE_S and
                 cone.altura < config.CONE_TROCA_LADO_ALTURA_MAX):
             self.lado = prop
+            self._lado_medido = True
             self._disc_t = None
+
+    def _w_cone(self, cone, lane):
+        """Posicao lateral do cone, em cm a partir do CENTRO da pista
+        (+ = direita). (valor, medido). medido=True vem da distancia ate a
+        continua na imagem do cone (exata, nao depende do giro do carro);
+        senao e uma estimativa pela geometria (aceita a longe)."""
+        lw, cw = config.PISTA_LARGURA_CM, config.CONE_LARGURA_CM
+        if (cone.d_solida_w is not None and cone.lado_solida != 0 and
+                cone.altura >= config.CONE_MEDIDA_ALTURA_MIN):
+            d = cone.d_solida_w * cw
+            w = (lw / 2.0 - d) if cone.lado_solida > 0 else (-lw / 2.0 + d)
+            # o cone e FIXO na pista: a posicao dele em cm na faixa nao muda
+            # quando o carro se mexe. A medida e precisa com o cone ainda
+            # longe e piora quando ele chega perto (em curva a reta ajustada
+            # desvia), entao: mediana das medidas, ignorando as de muito
+            # perto assim que ja ha medidas boas.
+            if (cone.altura <= config.CONE_MEDIDA_ALTURA_MAX or not self._w_obs):
+                self._w_obs.append(w)
+                if len(self._w_obs) > 25:
+                    self._w_obs.pop(0)
+                self._w_mem = float(np.median(self._w_obs))
+            self.conf = 1.0
+            return self._w_mem, True
+        if self._w_mem is not None:
+            # a continua saiu de vista (curva, oclusao): usa a ultima medida
+            self.conf = 1.0
+            return self._w_mem, True
+        if lane is None or not lane.hw_px:
+            return None, False
+        self.conf = config.CONE_CONF_GEO
+        car_x = config.CAMERA_RES[0] * config.CAR_CENTER_PCT
+        w_car = -((lane.lane_center_x - car_x) / lane.hw_px) * (lw / 2.0)
+        return w_car + cone.lat * cw, False
+
+    def _offset_posicao(self, cone, lane):
+        """Deslocamento (unidades do erro da pista) que poe o ALVO do carro a
+        uma folga fixa do cone, em cm. None se nao ha geometria confiavel.
+
+        Em vez de mirar o cone (que gira o carro cada vez mais forte quanto
+        mais perto), diz ONDE na faixa o carro deve estar. O seguidor de faixa
+        ja sintonizado leva o carro ate la e, sem o deslocamento, traz de
+        volta. E um PISO (so empurra pra longe do cone, nunca pra perto)."""
+        s = getattr(lane, "sinal_continuo", 0.0) if lane is not None else 0.0
+        if lane is None or not lane.hw_px or abs(s) < 0.5:
+            return None
+        w_cone, _ = self._w_cone(cone, lane)
+        if w_cone is None:
+            return None
+
+        lw = config.PISTA_LARGURA_CM
+        folga = config.CONE_FOLGA_CM
+        w_t = (w_cone - folga) if self.lado > 0 else (w_cone + folga)
+
+        # limites fisicos: nao passa da CONTINUA, e nao vai longe demais
+        # alem da pontilhada (a faixa do outro lado tem uma largura so)
+        margem_cont = config.CONE_MARGEM_CONT_CM
+        alem_pont = 0.8 * config.CONE_CRUZAR_FRAC * lw
+        if s > 0:       # continua a direita
+            w_min, w_max = -(lw / 2.0 + alem_pont), lw / 2.0 - margem_cont
+        else:
+            w_min, w_max = -(lw / 2.0 - margem_cont), lw / 2.0 + alem_pont
+        w_t = max(w_min, min(w_max, w_t))
+        self.w_cone_cm, self.w_alvo_cm = w_cone, w_t
+
+        # onde o alvo da pista (ja com o vies da pontilhada) esta hoje
+        w_now = (lane.center_x - lane.lane_center_x) / lane.hw_px * (lw / 2.0)
+        if self.lado > 0:
+            off_cm = min(0.0, w_t - w_now)        # so empurra pra ESQUERDA
+        else:
+            off_cm = max(0.0, w_t - w_now)        # so empurra pra DIREITA
+        metade = config.CAMERA_RES[0] / 2.0
+        return off_cm / (lw / 2.0) * lane.hw_px / metade
 
     def _deslocamento(self, cone, e_pista):
         """Quanto ACIMA do erro da pista o alvo precisa ir pra cumprir a folga.
         A folga e medida em larguras de cone: pede pouco com o cone longe e
         muito com ele colado. Descontar e_pista e o que faz a pista nunca
         ganhar do cone (ver docstring do modulo)."""
-        folga = config.CONE_FOLGA_LARGURAS * cone.larg
+        folga = (config.CONE_FOLGA_CM / config.CONE_LARGURA_CM) * cone.larg
         if self.lado < 0:       # passa pela direita -> alvo >= x + folga
             return max(0.0, cone.cx + folga - e_pista)
         return min(0.0, cone.cx - folga - e_pista)
@@ -513,7 +707,11 @@ class ConeAvoider:
             self._alt_ant = None
             self._disc_t = None
             self.lado = 0
+            self._lado_medido = False
+            self._w_mem = None
+            self._w_obs = []
             self.prox = 0.0
+            self.larg = 0.0
             self.ativo = False
             return 0.0
         return self._alvo * f

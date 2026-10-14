@@ -74,6 +74,9 @@ def main():
                 continue
 
             frame = cv2.resize(frame, config.CAMERA_RES)
+            # durante o desvio o carro cruza a pontilhada: nao deixa a visao
+            # "aprender" qual lado e a continua com a imagem desse momento
+            vision.congelar_lado = desvio.ativo
             res = vision.process(frame, debug=DEBUG)
 
             # camera de cone: pega o frame mais novo SEM esperar (thread).
@@ -111,12 +114,19 @@ def main():
                 # O desvio e calculado pra ser um PISO sobre o erro da pista
                 # (ver cones.py), entao a pista nao empurra o carro pro cone.
                 offset = desvio.update(cone, res)
-                turn = pid.update(res.error, res.heading)
-                if offset:
-                    adj = config.PID_KP * offset
-                    if config.STEER_INVERT:
-                        adj = -adj
-                    turn = max(-1.0, min(1.0, turn + adj))
+                if config.CONE_OFFSET_NO_PID or not desvio.modo_pos:
+                    turn = pid.update(res.error, res.heading)
+                    if offset:
+                        adj = desvio.ganho_esterco(config.PID_KP) * offset
+                        if config.STEER_INVERT:
+                            adj = -adj
+                        turn = max(-1.0, min(1.0, turn + adj))
+                else:
+                    # modo posicao: o deslocamento move o ALVO e passa pelo
+                    # PID (o termo D amortece, sem passar do ponto)
+                    erro = max(-1.0, min(1.0, res.error +
+                                         offset * config.CONE_GANHO_POS))
+                    turn = pid.update(erro, res.heading)
                 speed = speed_for(turn, res.curvature) * desvio.fator_velocidade()
                 if desvio.parar:
                     speed = 0.0     # cone colado na frente: nao bate
@@ -150,13 +160,21 @@ def main():
                 if fps_medido < config.FPS_MINIMO_SEGURO:
                     fator_freio = max(0.35, fps_medido / config.FPS_MINIMO_SEGURO)
                     speed *= fator_freio
-            elif vision.lost_frames <= config.MAX_FRAMES_PERDIDO:
+            elif vision.lost_frames <= (config.MAX_FRAMES_PERDIDO_DESVIO
+                                        if vision.em_desvio
+                                        else config.MAX_FRAMES_PERDIDO):
                 # perdeu agora (ou leitura degradada): NAO congela o esterco
                 # velho (isso trava o carro numa curva errada). Decai em
                 # direcao ao reto, bem devagar.
                 frame_anterior_confiavel = False
-                turn *= 0.85
-                speed = config.VELOCIDADE_PERDIDO
+                if vision.em_desvio:
+                    # no meio de um desvio perder a leitura e esperado: segura
+                    # o esterco (decai bem devagar) e nao reduz tanto
+                    turn *= config.TURN_DECAI_PERDIDO_DESVIO
+                    speed = config.VELOCIDADE_PERDIDO_DESVIO
+                else:
+                    turn *= 0.85
+                    speed = config.VELOCIDADE_PERDIDO
             else:
                 turn, speed = 0.0, 0.0
                 pid.reset()

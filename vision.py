@@ -98,6 +98,23 @@ class LaneVision:
         self._ultimo_sinal_consistente = 0   # -1, 0 ou +1
         self._sinal_travado = None    # None ate travar; depois fica -1.0 ou +1.0
 
+        # Main liga isso durante o desvio de cone: o carro cruza a pontilhada
+        # e, por um tempo, as taxas de deteccao nao dizem nada sobre qual
+        # lado e a continua. Enquanto True, o aprendizado do lado fica parado.
+        self.congelar_lado = False
+
+        # carro em cima da faixa OPOSTA (depois de cruzar a pontilhada)?
+        self._prev_media = None     # centro da faixa (px) no quadro anterior
+        self._opp_janela = 0        # quadros restantes em que a correcao vale
+        self.faixa_oposta = False   # exposto p/ log/HUD
+
+        # lado da continua conhecido de antemao (config): ja nasce travado
+        fixo = getattr(config, "LADO_CONTINUO_FIXO", None)
+        if fixo in ("direita", "esquerda"):
+            self._sinal_travado = 1.0 if fixo == "direita" else -1.0
+            self._sinal_continuo = self._sinal_travado
+            self.lado_continuo = fixo
+
     # ------------------------------------------------------------------
     def threshold(self, roi):
         """
@@ -186,6 +203,14 @@ class LaneVision:
         ref_e, ref_d = self.ref_e, self.ref_d
         jan = config.SCAN_TRACK_WINDOW
 
+        # Referencias pro PROXIMO quadro: a posicao das linhas na fileira de
+        # BAIXO (a primeira valida), nao na de cima. O proximo quadro comeca a
+        # busca pela fileira de baixo; com as linhas inclinadas (carro virado
+        # ou fora do centro) a posicao de cima fica a 100+ px da de baixo,
+        # fora da janela de rastreio, e a linha era perdida ou trocada pela
+        # vizinha (a pontilhada capturada como se fosse a continua).
+        ref_bottom = None
+
         # contadores pra deteccao automatica do lado continuo (ver __init__)
         n_rows_validas = 0
         n_hit_e = 0
@@ -205,13 +230,32 @@ class LaneVision:
             i_e = i_d = -1
 
             if ref_e is None or ref_d is None:
-                # sem historico: unica vez que usa o centro do carro como corte
-                esq = [(i, r) for i, r in enumerate(runs) if r[1] < car_x]
-                dirr = [(i, r) for i, r in enumerate(runs) if r[0] > car_x]
-                if esq:
-                    i_e, r = max(esq, key=lambda p: p[1][1]); xe = r[1]
-                if dirr:
-                    i_d, r = min(dirr, key=lambda p: p[1][0]); xd = r[0]
+                s_c = self._sinal_continuo
+                todas = list(enumerate(runs))
+                if abs(s_c) > 0.5 and len(todas) >= 1:
+                    # sem historico, mas se SABE qual lado e a continua: ancora
+                    # nela (a mais externa daquele lado) e pega a vizinha. O
+                    # corte pelo centro do carro erra quando o carro esta do
+                    # outro lado da pontilhada (desvio de cone): pegaria a
+                    # linha externa do outro lado como "esquerda".
+                    if s_c > 0:
+                        i_d, r = max(todas, key=lambda p: p[1][1]); xd = r[0]
+                        viz = [(i, q) for i, q in todas if q[1] < xd - config.SCAN_MIN_RUN_PX]
+                        if viz:
+                            i_e, q = max(viz, key=lambda p: p[1][1]); xe = q[1]
+                    else:
+                        i_e, r = min(todas, key=lambda p: p[1][0]); xe = r[1]
+                        viz = [(i, q) for i, q in todas if q[0] > xe + config.SCAN_MIN_RUN_PX]
+                        if viz:
+                            i_d, q = min(viz, key=lambda p: p[1][0]); xd = q[0]
+                else:
+                    # sem historico: unica vez que usa o centro do carro como corte
+                    esq = [(i, r) for i, r in todas if r[1] < car_x]
+                    dirr = [(i, r) for i, r in todas if r[0] > car_x]
+                    if esq:
+                        i_e, r = max(esq, key=lambda p: p[1][1]); xe = r[1]
+                    if dirr:
+                        i_d, r = min(dirr, key=lambda p: p[1][0]); xd = r[0]
             else:
                 # rastreio local: trecho branco mais proximo de onde essa
                 # faixa estava na linha de baixo
@@ -238,12 +282,33 @@ class LaneVision:
             # ---- achou os dois: linha de ouro, alimenta o modelo de largura
             if xe is not None and xd is not None:
                 largura = (xd - xe) / 2.0
-                if config.SCAN_HW_MIN < largura < config.SCAN_HW_MAX:
+                ok = config.SCAN_HW_MIN < largura < config.SCAN_HW_MAX
+                esperado = self._half_width(y) if ok else None
+                # a largura do par tem que bater com a da faixa APRENDIDA.
+                # Antes so conferia uma faixa absoluta (25..160 px), entao
+                # "linha externa do outro lado + continua" (o dobro da
+                # largura) passava, o centro virava a propria pontilhada e o
+                # carro era puxado pra outra faixa depois de um desvio.
+                if ok and esperado is not None and \
+                        abs(largura - esperado) > config.SCAN_HW_TOL * esperado:
+                    ok = False
+                if ok:
                     centros.append((y, (xe + xd) / 2.0, 1.0))
                     pares.append((y, largura))
                     res.found_left = res.found_right = True
                     ref_e, ref_d = xe, xd
-                continue
+                    if ref_bottom is None:
+                        ref_bottom = (ref_e, ref_d)
+                    continue
+                # par inconsistente: confia na faixa CONTINUA (se se sabe
+                # qual e) e completa o outro lado pela largura aprendida
+                if esperado is not None and abs(self._sinal_continuo) > 0.5:
+                    if self._sinal_continuo > 0:
+                        xe, i_e = None, -1
+                    else:
+                        xd, i_d = None, -1
+                else:
+                    continue
 
             if xe is None and xd is None:
                 continue
@@ -266,9 +331,55 @@ class LaneVision:
                 centros.append((y, xd - hw, 0.6))
                 res.found_right = True
                 ref_d, ref_e = xd, xd - 2 * hw
+            if ref_bottom is None:
+                ref_bottom = (ref_e, ref_d)
 
         # guarda a base do rastreio pro proximo frame
-        self.ref_e, self.ref_d = ref_e, ref_d
+        if ref_bottom is not None:
+            self.ref_e, self.ref_d = ref_bottom
+        else:
+            self.ref_e, self.ref_d = ref_e, ref_d
+
+        # ---- CONTINUIDADE do centro da faixa (so durante/apos um desvio)
+        # Com o carro do outro lado da pontilhada, a camera ve [linha externa
+        # do outro lado] + [pontilhada], uma dupla com a MESMA largura de uma
+        # faixa: o centro bruto cai no centro da OUTRA faixa, 2*hw pra um
+        # lado. Um centro de faixa nao pode pular uma faixa inteira em 33 ms,
+        # entao entre {bruto, bruto +- 2*hw} fica o mais proximo do centro do
+        # quadro anterior. Sem estatistica de qual linha e continua.
+        if self.congelar_lado:
+            self._opp_janela = config.FAIXA_OPOSTA_JANELA
+        elif self._opp_janela > 0:
+            self._opp_janela -= 1
+
+        k_shift = 0
+        if centros:
+            cxs = np.array([c[1] for c in centros], dtype=float)
+            cws = np.array([c[2] for c in centros], dtype=float)
+            media0 = float(np.average(cxs, weights=cws))
+            if (self._opp_janela > 0 and self._prev_media is not None
+                    and self.hw_model is not None):
+                hw_ref = float(np.polyval(self.hw_model, roi_h * 0.5))
+                hw_ref = max(config.SCAN_HW_MIN, min(config.SCAN_HW_MAX, hw_ref))
+                sgn = 1.0 if self._sinal_continuo >= 0 else -1.0
+                melhor_d = abs(media0 - self._prev_media)
+                for k in (-1, 1):
+                    d = abs(media0 + k * 2.0 * hw_ref - self._prev_media)
+                    # exige ganho CLARO (histerese): so troca se a hipotese
+                    # deslocada for bem mais coerente com o quadro anterior
+                    if d < melhor_d - 0.5 * hw_ref and d < config.FAIXA_OPOSTA_GATE * hw_ref:
+                        melhor_d, k_shift = d, k
+            if k_shift != 0:
+                novos = []
+                for (yy, xx, cc) in centros:
+                    hw_y = self._half_width(yy)
+                    if hw_y is None:
+                        hw_y = float(np.polyval(self.hw_model, yy))
+                    novos.append((yy, xx + k_shift * 2.0 * hw_y, cc))
+                centros = novos
+                media0 += k_shift * 2.0 * hw_ref
+            self._prev_media = media0
+        self.faixa_oposta = k_shift != 0
 
         # ---- deteccao automatica do lado continuo x pontilhado ----
         # ANTES: decisao binaria (vira "esquerda" OU "direita" de uma vez).
@@ -280,7 +391,7 @@ class LaneVision:
         # lado esta CLARAMENTE mais solido que o outro. Como ele nasce de
         # smooth_taxa_e/d (que ja e um EMA), a transicao de um lado pro
         # outro e sempre gradual, nunca um degrau.
-        if n_rows_validas >= config.SCAN_MIN_ROWS:
+        if n_rows_validas >= config.SCAN_MIN_ROWS and not self.congelar_lado:
             taxa_e = n_hit_e / n_rows_validas
             taxa_d = n_hit_d / n_rows_validas
             b = config.LADO_CONTINUO_SUAVIZACAO
@@ -350,11 +461,11 @@ class LaneVision:
 
         # ---- sem informacao suficiente
         res.n_pontos = len(centros)
-        if len(centros) < config.SCAN_MIN_ROWS:
+        if len(centros) < config.SCAN_MIN_CENTROS:
             self.lost_frames += 1
             res.valid = self.lost_frames <= config.MAX_FRAMES_PERDIDO
             res.error = self.smooth_error
-            res.motivo = f"poucos_pontos({len(centros)}<{config.SCAN_MIN_ROWS})"
+            res.motivo = f"poucos_pontos({len(centros)}<{config.SCAN_MIN_CENTROS})"
             if debug:
                 res.debug_view, res.debug_mask = self._draw(roi, mask, centros, None)
             return res
@@ -410,7 +521,10 @@ class LaneVision:
 
         # Se o alvo caiu FORA da imagem, o rastreio esta furado. Nao vale gerar
         # erro +-1 com confianca total: melhor declarar perdido.
-        if not (0 <= alvo <= self.W):
+        # (o centro da faixa pode cair um pouco fora da imagem quando o carro
+        # esta deslocado ~meia faixa; o erro ja e limitado a +-1 mais abaixo)
+        marg = config.ALVO_MARGEM_PCT * self.W
+        if not (-marg <= alvo <= self.W + marg):
             self.ref_e = self.ref_d = None
             self.lost_frames += 1
             res.valid = self.lost_frames <= config.MAX_FRAMES_PERDIDO
@@ -462,7 +576,11 @@ class LaneVision:
         else:
             self.sat_frames = 0
 
-        if self.sat_frames > config.MAX_FRAMES_SATURADO:
+        # (durante/logo apos um desvio de cone o carro fica de proposito longe
+        # do centro da faixa e o erro satura: isso NAO e rastreio podre, e
+        # zerar as referencias aqui fazia a visao se religar na linha errada)
+        if (self.sat_frames > config.MAX_FRAMES_SATURADO and
+                self._opp_janela == 0):
             self.ref_e = self.ref_d = None      # zera o rastreio e reengata
             self.sat_frames = 0
             self.smooth_error = 0.0             # nao carrega o erro podre adiante
@@ -480,6 +598,11 @@ class LaneVision:
         return res
 
     # ------------------------------------------------------------------
+    @property
+    def em_desvio(self):
+        """True durante e logo apos um desvio de cone (janela de ~3 s)."""
+        return self._opp_janela > 0
+
     def _half_width(self, y):
         if self.hw_model is None:
             return None
