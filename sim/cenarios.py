@@ -27,6 +27,21 @@ if os.environ.get('SIM_LONGE'):
     config.CONE_COMPROMISSO_LONGE = float(os.environ['SIM_LONGE'])
 if os.environ.get('SIM_SLEW'):
     config.CONE_OFFSET_SLEW = float(os.environ['SIM_SLEW'])
+if os.environ.get('SIM_FAIXA') == '0':
+    config.CONE_USA_FAIXA_CARRO = False
+if os.environ.get('SIM_VEL55') == '1':   # iguala as velocidades do commit anterior
+    config.VELOCIDADE_BASE, config.VELOCIDADE_MINIMA = 0.55, 0.45
+    config.VELOCIDADE_MINIMA_FECHADA, config.VELOCIDADE_PERDIDO = 0.38, 0.22
+    config.VELOCIDADE_PERDIDO_DESVIO, config.CONE_FREIO_MAX = 0.32, 0.25
+if os.environ.get('SIM_MARGEM'):
+    config.CONE_MARGEM_CM = float(os.environ['SIM_MARGEM'])
+    config.CONE_FOLGA_CM = config.CARRO_LARGURA_CM / 2 + config.CONE_LARGURA_CM / 2 + config.CONE_MARGEM_CM
+if os.environ.get('SIM_ACAO'):
+    config.CONE_ACAO_ALTURA = float(os.environ['SIM_ACAO'])
+if os.environ.get('SIM_GANHO'):
+    config.CONE_GANHO_POS = float(os.environ['SIM_GANHO'])
+if os.environ.get('SIM_SUAV'):
+    config.CONE_OFFSET_SUAVIZACAO = float(os.environ['SIM_SUAV'])
 
 # oval com retas e curvas (raio minimo ~0.77 m)
 PONTOS = [(0, 0), (2.0, -0.3), (4.0, 0.0), (4.6, 1.2), (3.8, 2.6),

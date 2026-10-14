@@ -339,6 +339,8 @@ class ConeAvoider:
         self.ativo = False
         self.parar = False         # cone colado na frente: Main zera a velocidade
         self.na_faixa = None       # True = cone na faixa do carro, False = outra
+        self.na_outra = False      # o CARRO esta na faixa do outro lado da pontilhada
+        self._t_outra = None       # desde quando o alvo planejado esta na outra faixa
         self.dist_cont_cm = None   # distancia do cone ate a continua (cm)
         self.larg = 0.0            # largura do cone (x norm.) -> ganho do esterco
         self._lado_medido = False  # o lado atual veio de MEDIDA (nao de palpite)
@@ -365,6 +367,8 @@ class ConeAvoider:
         self.na_faixa = None
         self.dist_cont_cm = None
         self.larg = 0.0
+        self.na_outra = False
+        self._t_outra = None
         self._lado_medido = False
         self.modo_pos = False
         self.w_alvo_cm = None
@@ -422,6 +426,14 @@ class ConeAvoider:
                 alvo = self._deslocamento(cone, e_pista) * rampa * config.CONE_GANHO
                 alvo = self._limitar_pela_pista(alvo, lane)
 
+            # CONE NO HORIZONTE: mede e decide, mas so AGE quando chegar perto
+            # (ou se ja esta no meio de uma manobra). Agir de longe era a
+            # parte "imprecisa": o carro se deslocava antes de saber direito.
+            agindo = (cone.altura >= config.CONE_ACAO_ALTURA or
+                      abs(self.offset) > 0.1 or abs(self._alvo) > 0.1)
+            if not agindo:
+                alvo = 0.0
+
             # rede de seguranca (desligada por padrao): cone colado BEM na
             # frente -> para
             if (config.CONE_PARAR_ALTURA > 0.0 and
@@ -434,7 +446,8 @@ class ConeAvoider:
             self._alt_ant = cone.altura
             self.prox = cone.proximidade
             self.larg = cone.larg
-            self.ativo = True
+            self.ativo = agindo
+            self._atualiza_faixa(agindo, agora)
         else:
             alvo = self._sem_cone(agora)
 
@@ -471,6 +484,29 @@ class ConeAvoider:
         if self.modo_pos:
             return kp * config.CONE_GANHO_POS
         return max(kp, config.CONE_ESTERCO_GANHO * self.larg)
+
+    def _atualiza_faixa(self, agindo, agora):
+        """Mantem 'o carro esta na outra faixa?' a partir do que o proprio
+        desvio comanda: alvo planejado do outro lado da pontilhada por um
+        tempo (da tempo do carro chegar la) -> esta na outra; alvo planejado
+        na propria faixa -> voltou."""
+        if self.w_alvo_cm is None or not agindo:
+            return
+        lw = config.PISTA_LARGURA_CM
+        # distancia do alvo planejado ate a pontilhada, + = pro lado da outra
+        # faixa. A pontilhada fica a lw/2 do centro da sua faixa.
+        if getattr(self, '_s_cont', 1.0) >= 0:      # continua a direita
+            alvo_na_outra = self.w_alvo_cm < -lw / 2.0 - 2.0
+        else:                                       # continua a esquerda
+            alvo_na_outra = self.w_alvo_cm > lw / 2.0 + 2.0
+        if alvo_na_outra == self.na_outra:
+            self._t_outra = None
+            return
+        if self._t_outra is None:
+            self._t_outra = agora
+        if agora - self._t_outra >= config.CONE_FAIXA_TEMPO_S:
+            self.na_outra = alvo_na_outra
+            self._t_outra = None
 
     def fator_velocidade(self):
         """Multiplicador (<=1) da velocidade: desvia mais devagar."""
@@ -528,33 +564,39 @@ class ConeAvoider:
                 return pont, True            # na sua faixa (ou na linha): cruza
             return -pont, True               # na outra faixa: afasta
 
-        # 3a) o carro acabou de se deslocar pra um lado pra desviar de um cone
-        # (lado atual + desvio grande, ainda no periodo de segurar). Um cone
-        # NOVO de frente (nao la longe do lado oposto) esta na faixa onde o
-        # carro esta agora: passa pelo lado de VOLTA. Cone claramente do outro
-        # lado (x grande) fica como esta.
-        if (config.CONE_PALPITE_VOLTA and self.lado != 0 and abs(self._alvo) > 0.2
-                and pont is not None and self._t_visto is not None):
-            if self.lado == pont and cone.cx < 0.3:
-                return -pont, False
-            return self.lado, False
-
-        # 3) sem nenhuma medida: palpite geometrico
-        if pont is not None:
-            # posicao lateral do cone em relacao ao CENTRO da pista, em
-            # larguras de cone: o cone em largura de cone (lat) menos onde o
-            # centro da pista esta (hw_px normaliza a perspectiva).
-            if lane is not None and lane.hw_px:
-                car_x = config.CAMERA_RES[0] * config.CAR_CENTER_PCT
-                larg_pista = config.PISTA_LARGURA_CM / config.CONE_LARGURA_CM
-                centro_w = ((lane.lane_center_x - car_x) / lane.hw_px) * larg_pista / 2.0
-                delta = cone.lat - centro_w
-                # bem pra fora do lado da pontilhada = na OUTRA faixa
-                if abs(delta) > larg_pista * 0.5 + config.CONE_PALPITE_FORA_W:
-                    cone_pro_lado_da_pont = (delta < 0) == (pont > 0)
-                    if cone_pro_lado_da_pont:
-                        return -pont, False
+        # 3) sem medida da posicao do cone: usa EM QUAL FAIXA O CARRO ESTA.
+        # Um cone de frente (x perto de 0) esta no caminho do carro, ou seja,
+        # NA FAIXA DELE. Um cone bem a direita/esquerda do carro esta na
+        # faixa daquele lado da pontilhada. A faixa do carro (propria ou a
+        # outra, do outro lado da pontilhada) vem de self.na_outra, que o
+        # proprio desvio mantem (cruzou -> esta na outra; voltou -> propria).
+        if pont is not None and not config.CONE_USA_FAIXA_CARRO:
+            # versao anterior (sem saber em qual faixa o carro esta): se o carro
+            # acabou de se deslocar, cone de frente passa pelo lado de volta;
+            # senao, cruza a pontilhada.
+            if (config.CONE_PALPITE_VOLTA and self.lado != 0 and abs(self._alvo) > 0.2
+                    and self._t_visto is not None):
+                if self.lado == pont and cone.cx < 0.3:
+                    return -pont, False
+                return self.lado, False
             return pont, False
+        if pont is not None:
+            # posicao lateral estimada do cone (cm do centro da SUA faixa,
+            # + = direita): onde o carro esta (centro da propria faixa, ou
+            # da outra se ele cruzou) + o quanto o cone esta ao lado dele,
+            # medido em larguras de cone (nao depende do angulo nem da
+            # distancia).
+            lw, cw = config.PISTA_LARGURA_CM, config.CONE_LARGURA_CM
+            w_carro = 0.0
+            if self.na_outra:
+                w_carro = -lw if pont > 0 else lw      # centro da faixa do outro lado
+            w_geo = w_carro + cone.lat * cw
+            if pont > 0:                               # pontilhada a esquerda
+                cone_na_outra = w_geo < -lw / 2.0
+            else:
+                cone_na_outra = w_geo > lw / 2.0
+            self.na_faixa = not cone_na_outra
+            return (-pont if cone_na_outra else pont), False
         return (-1 if config.CONE_LADO_PADRAO == "direita" else 1), False
 
     def _decidir_lado(self, cone, agora, e_pista, lane):
@@ -639,6 +681,7 @@ class ConeAvoider:
         s = getattr(lane, "sinal_continuo", 0.0) if lane is not None else 0.0
         if lane is None or not lane.hw_px or abs(s) < 0.5:
             return None
+        self._s_cont = s
         w_cone, _ = self._w_cone(cone, lane)
         if w_cone is None:
             return None
@@ -735,5 +778,7 @@ class ConeAvoider:
             self.prox = 0.0
             self.larg = 0.0
             self.ativo = False
+            self.na_outra = False
+            self._t_outra = None
             return 0.0
         return self._alvo * f
