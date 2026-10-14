@@ -305,11 +305,11 @@ CONE_PISTA_AREA_MIN = 40        # area minima (px) do vermelho na camera da pist
 CONE_PISTA_EXTRAP_PX = 70       # quanto acima da zona varrida a reta do centro da faixa
                                 # pode ser extrapolada pra achar a fileira do cone
 CONE_PISTA_ASSOCIA_ALTURA = 0.10   # a medida da pista so vale com o cone frontal assim de perto
-CONE_ACAO_ALTURA_SEM_MEDIDA = 0.17   # sem medida da posicao, espera o cone chegar mais perto
+CONE_ACAO_ALTURA_SEM_MEDIDA = 0.31   # sem medida da posicao, espera o cone chegar mais perto
 CONE_USA_POS_CARRO = True       # lado e posicao do cone = posicao REAL do carro (visao da
                                 # pista) + lat do cone. Nao depende de ver a linha continua.
 CONE_USA_FAIXA_CARRO = True     # decide o lado sabendo em QUAL faixa o carro esta
-CONE_ACAO_ALTURA = 0.14        # cone no horizonte: mede mas so AGE quando passar disso
+CONE_ACAO_ALTURA = 0.31        # cone no horizonte: mede mas so AGE quando passar disso
                                # (~1.3 m). Mais alto = espera chegar mais perto.
 CONE_FRENTE_X = 0.5            # |x| menor que isso = o cone esta de frente (na faixa do carro)
 CONE_FAIXA_TEMPO_S = 0.7       # tempo com o alvo na outra faixa pra considerar que o carro
@@ -333,7 +333,7 @@ CONE_CRUZAR_FRAC = 0.8
 # Rede de seguranca enquanto calibra: cone BEM na frente e quase encostando
 # (altura relativa ou base cortada) -> para o carro em vez de bater.
 # 0.0 desliga.
-CONE_PARAR_ALTURA = 0.28   # PARA a ~90 cm. Cone de 25 cm: altura = 25*f/(dist*240), f~240px -> 0.28 a 90 cm. Calibre pelo "alt" no log
+CONE_PARAR_ALTURA = 0.0    # parada DESLIGADA (o carro desvia em vez de parar)
                            # Se quiser a rede de seguranca: 0.50
 CONE_TROCA_LADO_ALTURA_MAX = 0.25   # so troca de lado no meio da manobra se o
                                     # cone ainda esta mais longe que isso
