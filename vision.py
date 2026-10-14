@@ -26,7 +26,7 @@ class LaneResult:
     __slots__ = ("error", "heading", "curvature", "found_left", "found_right",
                  "valid", "center_x", "debug_view", "debug_mask",
                  "motivo", "n_pontos", "lado_continuo",
-                 "lane_center_x", "hw_px")
+                 "lane_center_x", "hw_px", "sinal_continuo")
 
     def __init__(self):
         self.error = 0.0
@@ -46,6 +46,10 @@ class LaneResult:
         # Dao os limites laterais pra o desvio nunca empurrar o carro pra fora.
         self.lane_center_x = 0.0
         self.hw_px = None
+        # -1..+1: +1 = faixa continua a DIREITA (pontilhada a esquerda).
+        # O desvio de cones usa isso pra saber qual borda da pista pode ser
+        # cruzada (a pontilhada) e qual nao (a continua).
+        self.sinal_continuo = 0.0
 
 
 class LaneVision:
@@ -312,6 +316,7 @@ class LaneVision:
                     self.lado_continuo = "direita"
                 # diferenca pequena: mantem o ultimo rotulo, so texto mesmo
         res.lado_continuo = self.lado_continuo
+        res.sinal_continuo = self._sinal_continuo
 
         # ---- atualiza o modelo de meia-largura
         if len(pares) >= 2:

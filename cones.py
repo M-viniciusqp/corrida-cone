@@ -43,13 +43,15 @@ import config
 # ======================================================================
 class ConeResult:
     __slots__ = ("found", "cx", "altura", "proximidade", "bbox",
-                 "n_candidatos", "debug_view", "debug_mask", "lat", "larg")
+                 "n_candidatos", "debug_view", "debug_mask", "lat", "larg",
+                 "toca_base")
 
     def __init__(self):
         self.found = False
         self.cx = 0.0             # -1..+1, centro do cone na imagem
         self.lat = 0.0            # distancia lateral em LARGURAS DE CONE
         self.larg = 0.0           # largura do cone em unidades de x (-1..+1)
+        self.toca_base = False    # base do cone cortada pela borda de baixo
         self.altura = 0.0         # altura do cone / altura da imagem
         self.proximidade = 0.0    # 0 (longe) .. 1 (colado)
         self.bbox = None          # (x, y, w, h) em pixels do frame
@@ -119,6 +121,7 @@ class ConeVision:
             res.lat = ((x + w / 2.0) - W / 2.0) / w_ref
 
             toca_base = (y + h) >= H - 2      # cortado pela borda de baixo
+            res.toca_base = toca_base
             if toca_base:
                 res.proximidade = 1.0
             else:
@@ -153,6 +156,7 @@ class ConeAvoider:
         self.lado = 0              # onde o cone fica na imagem: -1 esq, +1 dir
         self.prox = 0.0            # proximidade do cone em uso (p/ freio e HUD)
         self.ativo = False
+        self.parar = False         # cone colado na frente: Main zera a velocidade
 
         self._alvo = 0.0           # ultimo deslocamento "bruto" com cone visivel
         self._t_visto = None       # quando viu cone pela ultima vez
@@ -165,6 +169,7 @@ class ConeAvoider:
         self.lado = 0
         self.prox = 0.0
         self.ativo = False
+        self.parar = False
         self._alvo = 0.0
         self._t_visto = None
         self._prox_visto = 0.0
@@ -180,12 +185,22 @@ class ConeAvoider:
         visivel = (cone is not None and cone.found and
                    abs(cone.cx) < config.CONE_CORREDOR)
 
+        self.parar = False
         if visivel:
-            self._decidir_lado(cone, agora)
             e_pista = lane.error if lane is not None else 0.0
-            alvo = (self._deslocamento(cone, e_pista) * cone.proximidade
-                    * config.CONE_GANHO)
+            self._decidir_lado(cone, agora, e_pista, lane)
+            # a folga ja e geometrica (larguras de cone), entao o pedido
+            # cresce sozinho com a aproximacao; a rampa so evita reagir a
+            # ruido muito longe.
+            rampa = 1.0 if cone.proximidade > 0.0 else 0.0
+            alvo = self._deslocamento(cone, e_pista) * rampa * config.CONE_GANHO
             alvo = self._limitar_pela_pista(alvo, lane)
+
+            # rede de seguranca: cone colado BEM na frente -> para
+            if (config.CONE_PARAR_ALTURA > 0.0 and
+                    abs(cone.cx) < config.CONE_PARAR_X and
+                    (cone.altura >= config.CONE_PARAR_ALTURA or cone.toca_base)):
+                self.parar = True
             self._alvo = alvo
             self._t_visto = agora
             self._prox_visto = cone.proximidade
@@ -216,23 +231,53 @@ class ConeAvoider:
         return 1.0 - config.CONE_FREIO_MAX * self.prox * relevancia
 
     # ------------------------------------------------------------------
-    def _decidir_lado(self, cone, agora):
-        """Decide por qual lado passa. So re-decide quando e OUTRO cone
-        (sumiu por um tempo, ou o x saltou) -- senao fica travado, pra nao
-        ficar trocando de lado enquanto o cone esta quase no centro."""
+    def _sobras(self, cone, e_pista, lane):
+        """Pra cada lado, quanto SOBRA de espaco depois de cumprir a folga
+        (negativo = nao cabe). Lado -1 = passa pela DIREITA (offset +),
+        lado +1 = passa pela ESQUERDA (offset -)."""
+        lo, hi = self._limites(lane)
+        folga = config.CONE_FOLGA_LARGURAS * cone.larg
+        precisa_dir = max(0.0, cone.cx + folga - e_pista)
+        precisa_esq = max(0.0, -(cone.cx - folga - e_pista))
+        return {-1: hi - precisa_dir, +1: (-lo) - precisa_esq}
+
+    def _decidir_lado(self, cone, agora, e_pista, lane):
+        """Decide por qual lado passa, olhando onde TEM ESPACO.
+
+        Lado preferido: o do cone (cone a esquerda -> passa pela direita).
+        Cone no meio -> passa pelo lado da faixa PONTILHADA (e onde pode
+        cruzar). Se o preferido nao cabe e o outro cabe, usa o outro.
+        Fica travado no mesmo cone; so troca se virar inviavel."""
+        sobra = self._sobras(cone, e_pista, lane)
+
         novo = (self.lado == 0 or self._t_visto is None or
                 agora - self._t_visto > config.CONE_RECONHECE_S or
                 (self._cx_ant is not None and
                  abs(cone.cx - self._cx_ant) > config.CONE_TROCA_CX))
+
         if not novo:
+            # travado: so troca se o lado atual ficou inviavel e o outro cabe
+            # (e so com o cone ainda longe: trocar colado e pior que seguir)
+            if (cone.altura < config.CONE_TROCA_LADO_ALTURA_MAX and
+                    sobra[self.lado] < -0.05 and sobra[-self.lado] >= 0.0):
+                self.lado = -self.lado
             return
 
         if abs(cone.cx) >= config.CONE_ZONA_CENTRO:
-            self.lado = -1 if cone.cx < 0 else 1
+            pref = -1 if cone.cx < 0 else 1
         else:
-            # cone bem no meio: usa o lado padrao.
-            # passa pela direita -> cone fica na ESQUERDA da imagem (-1).
-            self.lado = -1 if config.CONE_LADO_PADRAO == "direita" else 1
+            s = getattr(lane, "sinal_continuo", 0.0) if lane is not None else 0.0
+            if s > 0.5:        # continua a direita -> pontilhada a esquerda
+                pref = 1       # passa pela ESQUERDA (cone fica a direita)
+            elif s < -0.5:
+                pref = -1
+            else:
+                pref = -1 if config.CONE_LADO_PADRAO == "direita" else 1
+
+        if sobra[pref] >= 0.0 or sobra[pref] >= sobra[-pref]:
+            self.lado = pref
+        else:
+            self.lado = -pref
 
     def _deslocamento(self, cone, e_pista):
         """Quanto ACIMA do erro da pista o alvo precisa ir pra cumprir a folga.
@@ -244,23 +289,37 @@ class ConeAvoider:
             return max(0.0, cone.cx + folga - e_pista)
         return min(0.0, cone.cx - folga - e_pista)
 
-    def _limitar_pela_pista(self, off, lane):
-        """Nunca deixa o alvo final passar da borda da pista (menos margem)."""
-        off = max(-config.CONE_OFFSET_MAX, min(config.CONE_OFFSET_MAX, off))
+    def _limites(self, lane):
+        """(lo, hi) em unidades de erro: quanto o alvo pode andar pra cada
+        lado a partir de onde ja esta.
+
+        Borda CONTINUA: nunca cruza. Borda PONTILHADA: pode cruzar ate
+        CONE_CRUZAR_FRAC meias-larguras alem dela (ultrapassagem)."""
+        m = config.CONE_OFFSET_MAX
         if lane is None or lane.hw_px is None:
-            return off
+            return -m, m
 
         metade = config.CAMERA_RES[0] / 2.0
         margem = lane.hw_px * config.CONE_MARGEM_PISTA
         esq = lane.lane_center_x - lane.hw_px + margem
         dire = lane.lane_center_x + lane.hw_px - margem
 
-        # quanto ainda cabe pra cada lado a partir do alvo atual. Se o alvo
-        # ja esta fora (vies de faixa), nao empurra MAIS pra fora.
-        lo = min(0.0, esq - lane.center_x)
-        hi = max(0.0, dire - lane.center_x)
-        off_px = max(lo, min(hi, off * metade))
-        return off_px / metade
+        if config.CONE_PODE_CRUZAR_PONTILHADA:
+            extra = config.CONE_CRUZAR_FRAC * lane.hw_px
+            s = getattr(lane, "sinal_continuo", 0.0)
+            if s > 0.5:         # continua a direita -> pontilhada a esquerda
+                esq -= extra
+            elif s < -0.5:
+                dire += extra
+
+        # Se o alvo ja esta fora (vies de faixa), nao empurra MAIS pra fora.
+        lo = min(0.0, esq - lane.center_x) / metade
+        hi = max(0.0, dire - lane.center_x) / metade
+        return max(lo, -m), min(hi, m)
+
+    def _limitar_pela_pista(self, off, lane):
+        lo, hi = self._limites(lane)
+        return max(lo, min(hi, off))
 
     def _sem_cone(self, agora):
         """Cone sumiu (saiu do campo de visao ou falhou a deteccao)."""

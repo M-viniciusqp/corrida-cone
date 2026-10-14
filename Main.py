@@ -114,6 +114,8 @@ def main():
                         adj = -adj
                     turn = max(-1.0, min(1.0, turn + adj))
                 speed = speed_for(turn, res.curvature) * desvio.fator_velocidade()
+                if desvio.parar:
+                    speed = 0.0     # cone colado na frente: nao bate
 
                 # log RAPIDO enquanto desvia (o resumo de 2s e lento demais pra
                 # ver o que aconteceu num desvio que dura ~1s)
@@ -124,9 +126,10 @@ def main():
                              f"alt {cone.altura:.2f} prox {cone.proximidade:.2f}")
                     else:
                         v = "fora da visao (segurando)"
+                    aviso = "  <<< PARADO: cone na frente" if desvio.parar else ""
                     print(f"  [desvio] {v} | pista {res.error:+.2f} "
                           f"desvio {offset:+.2f} -> turn {turn:+.2f} "
-                          f"vel {speed:.2f} | lado {desvio.lado:+d}")
+                          f"vel {speed:.2f} | lado {desvio.lado:+d}{aviso}")
 
                 # TRAVA DE SEGURANCA: se o FPS medido estiver abaixo do minimo
                 # seguro pra velocidade configurada, o codigo reduz sozinho.

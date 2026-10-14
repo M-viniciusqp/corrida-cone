@@ -185,8 +185,10 @@ CONE_PREENCHIMENTO_MIN = 0.35   # area / area do retangulo (triangulo ~0.5)
 # ---- distancia aproximada: altura do cone / altura da imagem ----
 # Use Test_cones.py com o cone na distancia onde quer COMECAR a desviar
 # (LONGE) e na distancia onde ja deve estar desviando por completo (PERTO).
-CONE_ALTURA_LONGE = 0.05   # proximidade 0.0 (nao reage ainda)
-CONE_ALTURA_PERTO = 0.15   # proximidade 1.0 (desvio total)
+CONE_ALTURA_LONGE = 0.04   # proximidade 0.0 (nao reage ainda)
+CONE_ALTURA_PERTO = 0.09   # proximidade 1.0 (desvio total). Baixo de
+                           # proposito: a folga ja cresce sozinha com o cone
+                           # (larguras de cone), nao precisa de rampa lenta.
 
 # ---- desvio ----
 CONE_CORREDOR     = 0.95   # so reage a cone com |x| menor que isso (-1..+1)
@@ -200,7 +202,22 @@ CONE_LADO_PADRAO  = "direita"   # por onde passa quando o cone esta centrado
 CONE_GANHO        = 1.0
 CONE_OFFSET_MAX   = 0.80   # maximo de deslocamento somado ao erro
 CONE_OFFSET_SUAVIZACAO = 0.5   # EMA do deslocamento
-CONE_OFFSET_SLEW  = 3.0    # maximo que o deslocamento varia (erro/segundo)
+CONE_OFFSET_SLEW  = 6.0    # maximo que o deslocamento varia (erro/segundo)
+
+# A faixa PONTILHADA pode ser cruzada (e o lado da ultrapassagem); a CONTINUA
+# nao. Com isso ligado, o limite do desvio do lado da pontilhada passa pra
+# alem dela por CONE_CRUZAR_FRAC meias-larguras. Se desligar, o carro nunca
+# sai da propria faixa (e em pista estreita pode nao conseguir passar).
+CONE_PODE_CRUZAR_PONTILHADA = True
+CONE_CRUZAR_FRAC = 1.0
+
+# Rede de seguranca enquanto calibra: cone BEM na frente e quase encostando
+# (altura relativa ou base cortada) -> para o carro em vez de bater.
+# 0.0 desliga.
+CONE_PARAR_ALTURA = 0.50
+CONE_TROCA_LADO_ALTURA_MAX = 0.25   # so troca de lado no meio da manobra se o
+                                    # cone ainda esta mais longe que isso
+CONE_PARAR_X      = 0.50   # so conta se o cone esta nesse corredor central
 CONE_MARGEM_PISTA = 0.15   # fracao da meia-largura que NAO invade da borda
 
 # Memoria: o cone some do campo de visao ANTES do carro terminar de passar
