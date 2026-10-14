@@ -342,7 +342,7 @@ CONE_MARGEM_PISTA = 0.15   # fracao da meia-largura que NAO invade da borda
 
 # Memoria: o cone some do campo de visao ANTES do carro terminar de passar
 # por ele. Sem segurar o desvio, o carro volta pro centro e raspa o cone.
-CONE_SEGURAR_S       = 1.20   # cone estava perto: mantem o desvio por esse tempo
+CONE_SEGURAR_S       = 1.60   # cone estava perto: mantem o desvio por esse tempo
                               # (tem que cobrir o carro INTEIRO passando)
 CONE_SEGURAR_LONGE_S = 0.15   # cone estava longe: so tolera falha de deteccao
 CONE_DECAI_S         = 0.30   # depois disso, volta ao normal gradualmente
