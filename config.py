@@ -284,7 +284,7 @@ CONE_PISTA_DILATA_PX  = 21      # tira o cone da mascara da camera de PISTA
                                 # (reflexos do plastico viravam "faixa"); 0 desliga
 CONE_GANHO        = 1.0
 CONE_ESTERCO_GANHO = 2.0
-CONE_GANHO_POS    = 1.0   # modo 'posicao lateral': esterco = KP * isto * deslocamento
+CONE_GANHO_POS    = 1.6   # modo 'posicao lateral': esterco = KP * isto * deslocamento
 CONE_MARGEM_CONT_CM = 7.0 # o centro do carro fica a pelo menos isso da continua
 CONE_OFFSET_NO_PID = False   # False: o deslocamento entra no ERRO do PID (D amortece)
                              # True : entra depois do PID (sem passar pelo D)
@@ -292,8 +292,8 @@ CONE_OFFSET_MAX   = 2.00   # teto do deslocamento somado ao erro. ALTO de
                            # proposito: com a pista puxando -0.8 e o cone
                            # exigindo +0.6, o desvio precisa ser 1.4. Quem
                            # limita de verdade sao as bordas da pista.
-CONE_OFFSET_SUAVIZACAO = 0.5   # EMA do deslocamento
-CONE_OFFSET_SLEW  = 0.8    # maximo que o deslocamento varia (erro/segundo). 1 unidade
+CONE_OFFSET_SUAVIZACAO = 0.15  # EMA do deslocamento
+CONE_OFFSET_SLEW  = 3.0    # maximo que o deslocamento varia (erro/segundo). 1 unidade
                            # de erro ~ 29 cm de alvo na faixa: 1.5/s = ~40 cm/s, o
                            # que o carro consegue acompanhar (antes 6.0 era um degrau)
 CONE_RETORNO_SLEW = 0.35   # idem, mas VOLTANDO pro centro da faixa (erro/segundo ~ 10 cm/s)
