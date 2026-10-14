@@ -208,8 +208,11 @@ CONE_LADO_PADRAO  = "direita"   # por onde passa quando nao da pra saber
 # a faixa CONTINUA (em larguras de cone, na altura da base do cone). Se ela e
 # menor que a largura da faixa, o cone esta dentro da faixa do carro.
 CONE_LARGURA_CM  = 18.0    # largura da BASE do cone no chao (meça!)
-PISTA_LARGURA_CM = 60.0    # distancia entre a pontilhada e a continua (meça!)
-CONE_NA_LINHA_CM = 9.0     # a menos disso da pontilhada = "em cima da linha":
+PISTA_LARGURA_CM = 29.0    # MEDIDO na pista: cone em cima da pontilhada -> a
+                           # janela CONE leu 'continua a 29cm'. (Em cm so
+                           # se o cone tiver mesmo CONE_LARGURA_CM; o que
+                           # vale e a razao entre os dois.)
+CONE_NA_LINHA_CM = 5.0     # a menos disso da pontilhada = "em cima da linha":
                            # decide pelo lado com mais espaco
 CONE_LINHA_TOPHAT_MIN = 15      # contraste minimo de uma linha na camera de cone
 CONE_LINHA_PRESENCA   = 0.75    # fracao das linhas da faixa em que a linha
