@@ -5,6 +5,7 @@ sim/cenarios.py - cenarios de teste do simulador (pista, cones, mapa, CLI).
     python sim/cenarios.py --semente 2 --mapa    # salva mapa_sementeN.png
     python sim/cenarios.py --todas               # sementes 0..4
     python sim/cenarios.py --sem-externa         # pista sem a linha externa
+    python sim/cenarios.py --pista S --todas     # pista em S, cones alternados
 """
 import argparse
 import math
@@ -40,6 +41,33 @@ def cones_aleatorios(tr, n, semente, espaco=1.9):
     return out
 
 
+def pista_S(amp=0.20, comp=3.0, externa=True):
+    """oval com curvas em S somadas (como a pista real da foto).
+    amp 0.2 e moderada; 0.3 ja e dificil ate pro seguidor sem cones."""
+    base = pista(1.0, externa=False)
+    n_ond = max(1, round(base.L / comp))
+    pts, s = [], 0.0
+    while s < base.L - 0.15:
+        P, T, N = base.at(s)
+        pts.append(tuple(P + amp * math.sin(2 * math.pi * s / (base.L / n_ond)) * N))
+        s += 0.18
+    return Track(pts, outer_left_line=externa)
+
+
+def cones_alternados(tr, n, espaco, primeiro="R", u_r=0.145, u_l=-0.145, s0=2.5):
+    """cones um em cada faixa (como na foto): direita, esquerda, direita..."""
+    out = []
+    for i in range(n):
+        s = s0 + i * espaco
+        if s > tr.L - 1.5:
+            break
+        lado = primeiro if i % 2 == 0 else ("L" if primeiro == "R" else "R")
+        u = u_r if lado == "R" else u_l
+        P, T, N = tr.at(s)
+        out.append((s, u, tuple(P + u * N)))
+    return out
+
+
 def desenhar_mapa(tr, cones, out, nome, px_m=110, margem=0.6):
     C = tr.C
     allp = np.vstack([C, np.array(cones)]) if cones else C
@@ -70,9 +98,13 @@ def desenhar_mapa(tr, cones, out, nome, px_m=110, margem=0.6):
     print("mapa salvo em", nome)
 
 
-def rodar(semente, vmax, externa=True, escala=1.0, mapa=False):
-    tr = pista(escala, externa)
-    cs = cones_aleatorios(tr, 7, semente)
+def rodar(semente, vmax, externa=True, escala=1.0, mapa=False, tipo="oval", espaco=2.0):
+    if tipo == "S":
+        tr = pista_S(externa=externa)
+        cs = cones_alternados(tr, 6, espaco, primeiro="R" if semente % 2 == 0 else "L")
+    else:
+        tr = pista(escala, externa)
+        cs = cones_aleatorios(tr, 7, semente)
     pos = [c[2] for c in cs]
     out = run(tr, pos, v_max=vmax, t_max=tr.L / (vmax * 0.35) * 1.3)
     cl = " ".join(f"{c * 100:+3.0f}" if c < 5 else "  -" for c in out["clear"])
@@ -91,6 +123,9 @@ if __name__ == "__main__":
     ap.add_argument("--todas", action="store_true")
     ap.add_argument("--sem-externa", action="store_true")
     ap.add_argument("--mapa", action="store_true")
+    ap.add_argument("--pista", choices=["oval", "S"], default="oval",
+                    help="S = curvas em S + cones alternando faixa direita/esquerda")
+    ap.add_argument("--espaco", type=float, default=2.0, help="metros entre cones (pista S)")
     a = ap.parse_args()
     for s in (range(5) if a.todas else [a.semente]):
-        rodar(s, a.vmax, externa=not a.sem_externa, mapa=a.mapa)
+        rodar(s, a.vmax, externa=not a.sem_externa, mapa=a.mapa, tipo=a.pista, espaco=a.espaco)

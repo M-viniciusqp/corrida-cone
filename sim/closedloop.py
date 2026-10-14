@@ -7,11 +7,15 @@ cones, um carro com dinamica (bicicleta + servo + latencia) e as DUAS cameras
 renderizadas em perspectiva. Serve pra achar defeitos de controle/visao antes
 de ir pra pista. Precisa de: pip install opencv-python numpy
 
+Calibrado com a FOTO da pista real: faixas de ~1.5 larguras de cone, tres
+linhas (externa esq. + pontilhada + continua dir.), pontilhado com tracos de
+7.5 cm e vaos de 14 cm, cones um em cada faixa.
+
 NAO substitui a pista real: as cameras do simulador (altura, angulo, campo de
 visao) e a dinamica do carro sao estimativas. Use pra comparar versoes e achar
 bugs, nao pra afinar numeros finais.
 
-Uso rapido:  python sim/cenarios.py --semente 0 --vmax 0.8 --mapa
+Uso rapido:  python sim/cenarios.py --pista S --semente 0 --mapa
 """
 import sys, math, types
 import os
@@ -84,7 +88,7 @@ class Track:
         q = []
         idx = np.arange(0, self.n - 4, int(step / 0.01))
         for k in idx:
-            if dashed and (int(k * 0.01 / 0.10) % 2 == 1):
+            if dashed and ((k * 0.01) % 0.215) > 0.075:
                 continue
             k2 = min(k + int(step / 0.01), self.n - 1)
             a = self.C[k] + off * self.N[k]; b = self.C[k2] + off * self.N[k2]
@@ -261,7 +265,8 @@ class Pilot:
                         adj = -adj
                     turn = max(-1.0, min(1.0, turn + adj))
             else:
-                erro = max(-1.0, min(1.0, res.error + offset * config.CONE_GANHO_POS))
+                emax = getattr(config, "ERRO_MAX", 1.0)
+                erro = max(-emax, min(emax, res.error + offset * config.CONE_GANHO_POS))
                 turn = self.pid.update(erro, res.heading)
             self.turn = turn
             speed = speed_for(turn, res.curvature) * self.desvio.fator_velocidade()
@@ -284,7 +289,7 @@ class Pilot:
         return self.turn, self.speed
 
 
-LANE_CAM = Cam(480, 240, 260.0, 0.18, 30.0, 0.10)
+LANE_CAM = Cam(480, 240, 215.0, 0.18, 30.0, 0.10)   # f=215: meia-largura da faixa ~135px no fundo (como a real)
 CONE_CAM = Cam(320, 240, 250.0, 0.12, 0.0, 0.20)
 
 
