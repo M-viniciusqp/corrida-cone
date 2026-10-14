@@ -27,8 +27,11 @@ STEER_INVERT = False
 # =====================================================================
 # 3. VELOCIDADE (0.0 a 1.0)
 # =====================================================================
-VELOCIDADE_BASE    = 1.00   # No maximo. O freio automatico por FPS baixo e
-                            # o freio de curva fechada continuam ativos.
+VELOCIDADE_BASE    = 0.55   # BAIXA de proposito pra validar o desvio de cones.
+                            # Suba de 0.05 em 0.05 (ate 1.00) conforme ficar
+                            # estavel. NUNCA deixe abaixo de VELOCIDADE_MINIMA
+                            # (0.45), senao o speed_for() inverte. O freio por
+                            # FPS baixo e o de curva fechada continuam ativos.
 VELOCIDADE_MINIMA  = 0.45   # subiu de 0.35 -- piso normal de curva
 VELOCIDADE_PERDIDO = 0.22   # perdeu a pista, andando devagar procurando
 
