@@ -19,6 +19,14 @@ import numpy as np
 import cv2
 import config
 from closedloop import Track, Cam, run, LANE_W, CONE_W
+if os.environ.get('SIM_TRAVA') == '0':
+    config.CONE_TRAVA_LADO_CONE = False   # SIM_TRAVA
+if os.environ.get('SIM_VOLTA') == '0':
+    config.CONE_PALPITE_VOLTA = False
+if os.environ.get('SIM_LONGE'):
+    config.CONE_COMPROMISSO_LONGE = float(os.environ['SIM_LONGE'])
+if os.environ.get('SIM_SLEW'):
+    config.CONE_OFFSET_SLEW = float(os.environ['SIM_SLEW'])
 
 # oval com retas e curvas (raio minimo ~0.77 m)
 PONTOS = [(0, 0), (2.0, -0.3), (4.0, 0.0), (4.6, 1.2), (3.8, 2.6),

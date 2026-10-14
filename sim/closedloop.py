@@ -267,6 +267,11 @@ class Pilot:
             else:
                 emax = getattr(config, "ERRO_MAX", 1.0)
                 erro = max(-emax, min(emax, res.error + offset * config.CONE_GANHO_POS))
+                if config.CONE_TRAVA_LADO_CONE and self.desvio.cone_do_lado(self.cone):
+                    if self.desvio.lado > 0:
+                        erro = min(erro, 0.0)
+                    else:
+                        erro = max(erro, 0.0)
                 turn = self.pid.update(erro, res.heading)
             self.turn = turn
             speed = speed_for(turn, res.curvature) * self.desvio.fator_velocidade()

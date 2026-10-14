@@ -126,6 +126,14 @@ def main():
                     # PID (o termo D amortece, sem passar do ponto)
                     erro = max(-1.0, min(1.0, res.error +
                                          offset * config.CONE_GANHO_POS))
+                    # NUNCA vira pro lado do cone que esta passando: se o carro
+                    # passou do alvo (erro da pista saturado), a soma pista +
+                    # desvio fica positiva e ele voltava pra cima do cone.
+                    if config.CONE_TRAVA_LADO_CONE and desvio.cone_do_lado(cone):
+                        if desvio.lado > 0:
+                            erro = min(erro, 0.0)
+                        else:
+                            erro = max(erro, 0.0)
                     turn = pid.update(erro, res.heading)
                 speed = speed_for(turn, res.curvature) * desvio.fator_velocidade()
                 if desvio.parar:

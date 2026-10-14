@@ -293,10 +293,16 @@ CONE_OFFSET_MAX   = 2.00   # teto do deslocamento somado ao erro. ALTO de
                            # exigindo +0.6, o desvio precisa ser 1.4. Quem
                            # limita de verdade sao as bordas da pista.
 CONE_OFFSET_SUAVIZACAO = 0.5   # EMA do deslocamento
-CONE_OFFSET_SLEW  = 1.5    # maximo que o deslocamento varia (erro/segundo). 1 unidade
+CONE_OFFSET_SLEW  = 0.8    # maximo que o deslocamento varia (erro/segundo). 1 unidade
                            # de erro ~ 29 cm de alvo na faixa: 1.5/s = ~40 cm/s, o
                            # que o carro consegue acompanhar (antes 6.0 era um degrau)
 CONE_RETORNO_SLEW = 0.35   # idem, mas VOLTANDO pro centro da faixa (erro/segundo ~ 10 cm/s)
+CONE_TRAVA_ALTURA_MIN = 0.12     # a trava so vale com o cone a vista e pelo menos assim de perto
+CONE_TRAVA_LADO_CONE = False    # nunca esterca pro lado do cone que esta passando
+CONE_PALPITE_VOLTA = True       # cone novo de frente logo apos cruzar: passa pelo lado de volta
+CONE_COMPROMISSO_LONGE = 0.20   # um cone NOVO so e ignorado enquanto estiver mais longe que
+                                # isso (~1 m); mais perto ele esta no caminho e e tratado
+                                # (o log real mostrou o carro ignorando um cone ja de frente)
 CONE_COMPROMISSO_ALTURA = 0.35   # cone assim de perto = o carro esta passando por ele;
                                 # um cone novo nao derruba o desvio dele ate terminar
 

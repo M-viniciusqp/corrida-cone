@@ -396,7 +396,8 @@ class ConeAvoider:
         if (visivel and self._t_visto is not None and self._alt_ant is not None
                 and (agora - self._t_visto) < config.CONE_SEGURAR_S
                 and abs(self._alvo) > 0.08
-                and cone.altura < 0.8 * self._alt_ant):
+                and cone.altura < 0.8 * self._alt_ant
+                and cone.altura < config.CONE_COMPROMISSO_LONGE):
             visivel = False
 
         self.parar = False
@@ -454,6 +455,16 @@ class ConeAvoider:
         if abs(self.offset) < 0.005 and not self.ativo:
             self.offset = 0.0
         return self.offset
+
+    def cone_do_lado(self, cone):
+        """True se ha um cone A VISTA, perto, do lado que esta sendo passado
+        (lado +1 = passa pela esquerda -> o cone fica a direita). So nesse caso
+        e proibido esterçar pra esse lado: depois que o cone sai de vista o
+        carro precisa poder voltar pra faixa."""
+        if (cone is None or not cone.found or not self.ativo or self.lado == 0
+                or cone.altura < config.CONE_TRAVA_ALTURA_MIN):
+            return False
+        return cone.cx > -0.15 if self.lado > 0 else cone.cx < 0.15
 
     def ganho_esterco(self, kp):
         """Ganho aplicado ao deslocamento (so no modo 'esterco extra')."""
@@ -516,6 +527,17 @@ class ConeAvoider:
             if dentro > -larg_pista / 2.0 - config.CONE_NA_LINHA_CM:
                 return pont, True            # na sua faixa (ou na linha): cruza
             return -pont, True               # na outra faixa: afasta
+
+        # 3a) o carro acabou de se deslocar pra um lado pra desviar de um cone
+        # (lado atual + desvio grande, ainda no periodo de segurar). Um cone
+        # NOVO de frente (nao la longe do lado oposto) esta na faixa onde o
+        # carro esta agora: passa pelo lado de VOLTA. Cone claramente do outro
+        # lado (x grande) fica como esta.
+        if (config.CONE_PALPITE_VOLTA and self.lado != 0 and abs(self._alvo) > 0.2
+                and pont is not None and self._t_visto is not None):
+            if self.lado == pont and cone.cx < 0.3:
+                return -pont, False
+            return self.lado, False
 
         # 3) sem nenhuma medida: palpite geometrico
         if pont is not None:
