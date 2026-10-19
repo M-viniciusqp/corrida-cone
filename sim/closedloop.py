@@ -30,6 +30,7 @@ import cones as cones_mod
 from vision import LaneVision
 from controller import SteeringPID, speed_for
 from cones import ConeVision, ConeAvoider
+from manobra import Manobra
 
 
 class Clock:
@@ -229,6 +230,8 @@ class Pilot:
         self.cv = ConeVision()
         self.pid = SteeringPID()
         self.desvio = ConeAvoider()
+        self.manobra = Manobra()
+        self.peq_ant = None
         self.cone = None
         self.turn = 0.0
         self.speed = 0.0
@@ -246,10 +249,15 @@ class Pilot:
             cv2.imwrite(tag + "_lane.png", np.vstack([res.debug_view, res.debug_mask]))
             print(f"[dump {tag}] e={res.error:+.2f} motivo={res.motivo} sig={res.sinal_continuo:+.2f} hw={res.hw_px}")
         self.res = res
+        peq = cv2.cvtColor(cv2.resize(lane_img, (64, 36), interpolation=cv2.INTER_AREA),
+                           cv2.COLOR_BGR2GRAY).astype(np.int16)
+        mov_pista = float(np.abs(peq - self.peq_ant).mean()) if self.peq_ant is not None else None
+        self.peq_ant = peq
         if cone_img is not None:
             sc = res.sinal_continuo
             lado_s = 1 if sc > 0.5 else (-1 if sc < -0.5 else 0)
             self.cone = self.cv.process(cone_img, lado_solida=lado_s)
+        self.manobra.update(Clock.t, self.cone, cone_img is not None, mov_pista, self.desvio)
 
         if res.valid and res.motivo == "ok" and (res.found_left or res.found_right):
             if not self.frame_anterior_confiavel:
@@ -278,11 +286,16 @@ class Pilot:
             speed = speed_for(turn, res.curvature) * self.desvio.fator_velocidade()
             if self.desvio.parar:
                 speed = 0.0
+            if self.manobra.parado:
+                speed, turn = 0.0, 0.0
+                self.turn = 0.0
             self.speed = speed
         elif self.vision.lost_frames <= (config.MAX_FRAMES_PERDIDO_DESVIO
                                          if self.vision.em_desvio else config.MAX_FRAMES_PERDIDO):
             self.frame_anterior_confiavel = False
-            if self.vision.em_desvio:
+            if self.manobra.parado:
+                self.turn, self.speed = 0.0, 0.0
+            elif self.vision.em_desvio:
                 self.turn *= config.TURN_DECAI_PERDIDO_DESVIO
                 self.speed = config.VELOCIDADE_PERDIDO_DESVIO
             else:
@@ -357,7 +370,7 @@ def run(track, cones, s0=0.2, duty_scale=1.0, v_max=0.9, t_max=60.0, seed=0,
                         pilot.desvio.lado, pilot.desvio.na_faixa, pilot.desvio.dist_cont_cm, pilot.vision.faixa_oposta,
                         None if pilot.cone is None or not pilot.cone.found else
                         (pilot.cone.cx, pilot.cone.altura)))
-        if frames > 30 and car.v < 0.01 and speed == 0.0:
+        if frames > 30 and car.v < 0.01 and speed == 0.0 and not pilot.manobra.parado:
             break
         if prog >= track.L - 0.3:
             break

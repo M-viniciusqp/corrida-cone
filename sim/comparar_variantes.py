@@ -4,7 +4,7 @@ Uso:  python sim/comparar_variantes.py final,old S 6
       python sim/comparar_variantes.py final oval 10 CONE_ACAO_ALTURA=0.15
 (variantes em VARIANTS; o 4o argumento sobrescreve valores do config)
 """
-﻿import sys, os, time, itertools, json
+import sys, os, time, itertools, json
 sys.path.insert(0, os.getcwd()); sys.path.insert(0, os.path.join(os.getcwd(), "sim"))
 from multiprocessing import Pool
 

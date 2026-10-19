@@ -338,6 +338,7 @@ class ConeAvoider:
         self.prox = 0.0            # proximidade do cone em uso (p/ freio e HUD)
         self.ativo = False
         self.parar = False         # cone colado na frente: Main zera a velocidade
+        self.liberado = True       # manobra.py: False = so OBSERVA o cone (nao desvia ainda)
         self.na_faixa = None       # True = cone na faixa do carro, False = outra
         self.na_outra = False      # o CARRO esta na faixa do outro lado da pontilhada
         self._t_outra = None       # desde quando o alvo planejado esta na outra faixa
@@ -447,6 +448,12 @@ class ConeAvoider:
                        else config.CONE_ACAO_ALTURA_SEM_MEDIDA)
             agindo = (cone.altura >= alt_min or
                       abs(self.offset) > 0.1 or abs(self._alvo) > 0.1)
+            if config.CONE_PARA_E_ANALISA:
+                # quem manda e a manobra (para -> analisa -> desvia): so
+                # desvia quando liberado; antes disso so observa
+                agindo = self.liberado
+            if not agindo:
+                alvo = 0.0
             if not agindo:
                 alvo = 0.0
 
@@ -478,12 +485,29 @@ class ConeAvoider:
         # pra erros pequenos, nao acompanha um alvo que "solta" 30 cm de uma
         # vez e passa direto pela faixa (cruzava ate a continua).
         voltando = abs(novo) < abs(self.offset)
-        taxa = config.CONE_RETORNO_SLEW if voltando else config.CONE_OFFSET_SLEW
+        if voltando:
+            taxa = config.CONE_RETORNO_SLEW
+        elif config.CONE_PARA_E_ANALISA and self.liberado:
+            taxa = config.CONE_OFFSET_SLEW_DESVIO   # saindo do repouso: ja sabe o lado, vai direto
+        else:
+            taxa = config.CONE_OFFSET_SLEW
         passo = taxa * dt
         self.offset += max(-passo, min(passo, novo - self.offset))
         if abs(self.offset) < 0.005 and not self.ativo:
             self.offset = 0.0
         return self.offset
+
+    def reiniciar_medidas(self):
+        """Esquece as medidas da aproximacao (de longe, com o carro andando e
+        balancando) pra medir de novo com o carro parado."""
+        self._w_mem = None
+        self._w_obs = []
+        self._w_geo = []
+        self._w_lane = None
+        self._w_lane_obs = []
+        self._lado_medido = False
+        self.lado = 0
+        self._disc_t = None
 
     def cone_do_lado(self, cone):
         """True se ha um cone A VISTA, perto, do lado que esta sendo passado

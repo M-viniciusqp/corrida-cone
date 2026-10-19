@@ -23,6 +23,8 @@ from controller import SteeringPID, speed_for
 from MotorModule import Motor
 from camera import abrir_camera, CameraThread
 from cones import ConeVision, ConeAvoider
+import numpy as np
+from manobra import Manobra, SEGUIR, FREAR, ANALISAR, DESVIAR
 
 DEBUG = False          # desligado = mais FPS = reacao mais rapida
 
@@ -49,6 +51,10 @@ def main():
     vision = LaneVision()
     cones = ConeVision()
     desvio = ConeAvoider()
+    manobra = Manobra()
+    estado_ant = SEGUIR
+    peq_ant = None                 # imagem pequena da pista (mede se o carro ainda anda)
+    t_man_log = 0.0
     cone = None                    # ultimo ConeResult (so reprocessa frame novo)
     cone_idx = -1
     pid = SteeringPID()
@@ -79,8 +85,17 @@ def main():
             vision.congelar_lado = desvio.ativo
             res = vision.process(frame, debug=DEBUG)
 
+            # quanto a imagem da pista mudou desde o quadro anterior: com o
+            # carro parado fica ~0 (so ruido); andando, o chao passa
+            peq = cv2.cvtColor(cv2.resize(frame, (64, 36), interpolation=cv2.INTER_AREA),
+                               cv2.COLOR_BGR2GRAY).astype(np.int16)
+            mov_pista = (float(np.abs(peq - peq_ant).mean())
+                         if peq_ant is not None else None)
+            peq_ant = peq
+
             # camera de cone: pega o frame mais novo SEM esperar (thread).
             # So reprocessa se chegou frame novo; frame velho = ignora cone.
+            cone_novo = False
             if cone_cam is not None:
                 f_cone, idx, idade = cone_cam.read()
                 if f_cone is None or idade > config.CONE_FRAME_VELHO_S:
@@ -92,7 +107,36 @@ def main():
                     lado_s = 1 if sc > 0.5 else (-1 if sc < -0.5 else 0)
                     cone = cones.process(f_cone, debug=DEBUG, lado_solida=lado_s)
                     cone_idx = idx
+                    cone_novo = True
             t2 = time.time()
+
+            # ---------- PARA -> ANALISA -> DESVIA (manobra.py) ----------
+            agora = time.time()
+            estado = manobra.update(agora, cone, cone_novo, mov_pista, desvio)
+            if estado != estado_ant:
+                if estado == FREAR:
+                    print(f"  [manobra] CONE a vista (alt {cone.altura:.2f}) -> PARANDO...")
+                elif estado == ANALISAR:
+                    print(f"  [manobra] parou em {agora - manobra.t_ref:.2f}s -> ANALISANDO o cone")
+                elif estado == DESVIAR:
+                    lado_t = {-1: "pela DIREITA", 1: "pela ESQUERDA", 0: "?"}[desvio.lado]
+                    pos = (f"cone {desvio.w_cone_cm:+.0f}cm do centro da faixa"
+                           if desvio.w_cone_cm is not None else "posicao nao medida")
+                    print(f"  [manobra] DESVIANDO {lado_t} ({pos})")
+                elif estado == SEGUIR:
+                    print("  [manobra] desvio terminado -> seguindo a faixa")
+                if estado_ant in (FREAR, ANALISAR) and estado not in (FREAR, ANALISAR):
+                    pid.marcar_retomada()      # saindo da parada: sem chute do D
+                    pid.reset()
+                estado_ant = estado
+            if estado == FREAR and agora - t_man_log >= 0.15:
+                t_man_log = agora
+                mc = manobra.mov_cone
+                mc_t = f"cone d_alt {mc[0]:.3f} d_x {mc[1]:.3f}" if mc else "cone -"
+                mp_t = f"{manobra.mov_pista:.1f}" if manobra.mov_pista is not None else "-"
+                print(f"  [manobra] freando... {mc_t} | chao {mp_t} "
+                      f"(parado = d_alt<{config.CONE_PARADO_D_ALT} d_x<{config.CONE_PARADO_D_X} "
+                      f"chao<{config.CONE_PARADO_DIFF}) calmo {manobra.calmo}/{config.CONE_PARADA_CALMO_N}")
 
             # ---------- maquina de estados ----------
             # IMPORTANTE: checa res.motivo=="ok", nao so res.valid.
@@ -139,6 +183,8 @@ def main():
                 speed = speed_for(turn, res.curvature) * desvio.fator_velocidade()
                 if desvio.parar:
                     speed = 0.0     # cone colado na frente: nao bate
+                if manobra.parado:
+                    speed, turn = 0.0, 0.0   # parando/analisando: motores em zero
 
                 # log RAPIDO enquanto desvia (o resumo de 2s e lento demais pra
                 # ver o que aconteceu num desvio que dura ~1s)
@@ -182,7 +228,9 @@ def main():
                 # velho (isso trava o carro numa curva errada). Decai em
                 # direcao ao reto, bem devagar.
                 frame_anterior_confiavel = False
-                if vision.em_desvio:
+                if manobra.parado:
+                    turn, speed = 0.0, 0.0
+                elif vision.em_desvio:
                     # no meio de um desvio perder a leitura e esperado: segura
                     # o esterco (decai bem devagar) e nao reduz tanto
                     turn *= config.TURN_DECAI_PERDIDO_DESVIO
