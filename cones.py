@@ -364,6 +364,8 @@ class ConeAvoider:
         self.off_base = 0.0        # deslocamento que mantem o carro na faixa em que esta
         self._alt_pico = 0.0       # maior altura do cone que esta sendo passado (distingue cone NOVO)
         self._congelado = False    # decisao (lado + posicao do cone) travada durante o desvio
+        self._w_pont_obs = []      # medidas pela pontilhada (pra classificar a faixa do cone)
+        self.classif = None        # ultimo resultado de classificar_parado (pro log)
         self._w_fixo = None
         self._t_outra = None       # desde quando o alvo planejado esta na outra faixa
         self.dist_cont_cm = None   # distancia do cone ate a continua (cm)
@@ -395,6 +397,7 @@ class ConeAvoider:
         self._alt_pico = 0.0
         self._congelado = False
         self._w_fixo = None
+        self._w_pont_obs = []
         self.prox = 0.0
         self.ativo = False
         self.parar = False
@@ -449,7 +452,8 @@ class ConeAvoider:
                 and self._alt_pico > 0.3 and cone.altura < 0.5 * self._alt_pico):
             visivel = False
 
-        if visivel and lane is not None and not self.relevante(cone, lane):
+        if (visivel and lane is not None and not config.CONE_PARA_E_ANALISA
+                and not self.relevante(cone, lane)):
             visivel = False             # cone da outra faixa / fora da pista: ignora
 
         self.parar = False
@@ -572,6 +576,48 @@ class ConeAvoider:
             w = self._w_geometrico(cone, lane, grava=False)
         return w
 
+    def classificar_parado(self, cone, lane):
+        """Com o carro PARADO: o cone esta na faixa do carro? -> (relevante,
+        texto). Junta o que cada medida diz, com votos:
+          - distancia ate a PONTILHADA na imagem do cone (peso 2)
+          - posicao do cone na camera da PISTA, contra as linhas da faixa (peso 2)
+          - regra simples: a continua esta a direita e o cone aparece bem do
+            lado ESQUERDO do carro -> nao esta na minha faixa (peso 1)
+        Empate ou sem informacao = relevante (na duvida, desvia)."""
+        lw, cw = config.PISTA_LARGURA_CM, config.CONE_LARGURA_CM
+        s = getattr(lane, "sinal_continuo", 0.0) if lane is not None else 0.0
+        if abs(s) < 0.5:
+            self.classif = "sem lado da continua"
+            return True, self.classif
+        limite = -lw / 2.0 - config.CONE_NA_LINHA_CM - config.CONE_OUTRA_FAIXA_FOLGA_CM
+
+        def minha(w):                       # w no referencial da faixa da continua
+            return (w if s > 0 else -w) >= limite
+
+        def nome(ok):
+            return "minha" if ok else "OUTRA"
+
+        score, partes = 0, []
+        if len(self._w_pont_obs) >= 2:
+            w = float(np.median(self._w_pont_obs))
+            ok = minha(w)
+            score += 2 if ok else -2
+            partes.append("pontilhada %+.0fcm=%s" % (w, nome(ok)))
+        if len(self._w_lane_obs) >= 2:
+            w = float(np.median(self._w_lane_obs))
+            ok = minha(w)
+            score += 2 if ok else -2
+            partes.append("cam.pista %+.0fcm=%s" % (w, nome(ok)))
+        # regra simples: lado do cone no eixo do carro (a continua a direita:
+        # cone muito a esquerda = outra faixa)
+        d = cone.lat * cw                    # cm do eixo do carro, + = direita
+        lado_cont = 1 if s > 0 else -1
+        ok = (d * lado_cont) > -config.CONE_LAT_OUTRA_CM
+        score += 1 if ok else -1
+        partes.append("lat %+.0fcm=%s" % (d, nome(ok)))
+        self.classif = " | ".join(partes)
+        return score >= 0, self.classif
+
     def relevante(self, cone, lane):
         """O cone importa pro carro? So se esta na FAIXA DELE (ou em cima da
         pontilhada). Cone na outra faixa ou fora da pista e ignorado: nem
@@ -611,6 +657,7 @@ class ConeAvoider:
     def reiniciar_medidas(self):
         self._congelado = False
         self._w_fixo = None
+        self._w_pont_obs = []
         """Esquece as medidas da aproximacao (de longe, com o carro andando e
         balancando) pra medir de novo com o carro parado."""
         self._w_mem = None
@@ -879,8 +926,15 @@ class ConeAvoider:
         senao e uma estimativa pela geometria (aceita a longe)."""
         lw, cw = config.PISTA_LARGURA_CM, config.CONE_LARGURA_CM
         g = self._w_geometrico(cone, lane, grava=True)     # mantem a memoria geometrica
+        if self._w_lane is not None:
+            self._w_lane_obs.append(self._w_lane)
+            if len(self._w_lane_obs) > 12:
+                self._w_lane_obs.pop(0)
         wp = self._w_pont_ok(cone, lane)
         if wp is not None:
+            self._w_pont_obs.append(wp)
+            if len(self._w_pont_obs) > 12:
+                self._w_pont_obs.pop(0)
             if cone.altura >= config.CONE_MEDIDA_ALTURA_MIN:
                 self._w_obs.append(wp)
                 if len(self._w_obs) > 25:
@@ -888,10 +942,6 @@ class ConeAvoider:
                 self._w_mem = float(np.median(self._w_obs))
             self.conf = 1.0
             return self._w_mem if self._w_mem is not None else wp, True
-        if self._w_lane is not None:
-            self._w_lane_obs.append(self._w_lane)
-            if len(self._w_lane_obs) > 12:
-                self._w_lane_obs.pop(0)
         if self._w_lane_obs:
             # o cone e fixo: mediana das ultimas medidas da camera da pista
             w = float(np.median(self._w_lane_obs[-7:]))

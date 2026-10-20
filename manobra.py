@@ -39,6 +39,9 @@ class Manobra:
         self._alt_max = 0.0         # maior altura do cone visto neste desvio
         self._fora_da_pista = False  # o cone visto esta fora da pista: ignora
         self.seq = False            # esta parada e de um cone EM SEQUENCIA (tempos mais curtos)
+        self.ignorando = False      # o cone visto e de OUTRA faixa: nao para por ele
+        self._ign_alt = 0.0
+        self.ultimo = ""            # texto da ultima decisao (pro log)
         self.mov_cone = None        # ultimas medidas (pro log)
         self.mov_pista = None
 
@@ -70,7 +73,7 @@ class Manobra:
         self.mov_pista = mov_pista
         # cone fora da pista (do outro lado das linhas externas): nao e obstaculo
         self._fora_da_pista = (cone is not None and cone.found and lane is not None
-                               and not desvio.relevante(cone, lane))
+                               and not desvio.no_caminho(cone, lane))
 
         # quanto o cone mexeu na imagem desde o quadro novo anterior
         if cone_novo:
@@ -90,6 +93,23 @@ class Manobra:
 
         if self.estado == SEGUIR:
             desvio.liberado = False
+            if self.ignorando:
+                # cone da OUTRA faixa: nao para, mas o desvio segue livre pra so
+                # se afastar um pouco dele (centraliza o carro na faixa) e, se a
+                # classificacao errou e ele estiver no caminho, ainda desvia
+                desvio.liberado = True
+                if cone is None or not cone.found:
+                    if self._t_sem_cone is None:
+                        self._t_sem_cone = agora
+                    elif agora - self._t_sem_cone >= config.CONE_REARME_S:
+                        self.ignorando = False
+                else:
+                    self._t_sem_cone = None
+                    self._ign_alt = max(self._ign_alt, cone.altura)
+                    if self._ign_alt > 0.3 and cone.altura < 0.5 * self._ign_alt:
+                        self.ignorando = False      # apareceu OUTRO cone, mais longe
+                self.vistos = 0
+                return self.estado
             if (self.vistos >= config.CONE_GATILHO_QUADROS and
                     agora - self.t_ultimo_gatilho > config.CONE_COOLDOWN_S):
                 desvio.reset(manter_faixa=True)   # cone novo: esquece o desvio anterior, mas fica na faixa
@@ -121,6 +141,17 @@ class Manobra:
             analise_s = config.CONE_SEQ_ANALISE_S if self.seq else config.CONE_ANALISE_S
             if agora - self.t_estado >= analise_s:
                 if cone is not None and cone.found:
+                    rel, txt = desvio.classificar_parado(cone, lane)
+                    self.ultimo = txt
+                    if not rel:
+                        # NAO esta na minha faixa: segue em frente, sem desviar
+                        self.ignorando = True
+                        self._ign_alt = cone.altura
+                        self._t_sem_cone = None
+                        self.t_ultimo_gatilho = agora
+                        desvio.reset(manter_faixa=True)
+                        self._muda(SEGUIR, agora)
+                        return self.estado
                     desvio.liberado = True
                     desvio.congelar_decisao(cone, lane)
                     self._rearmado = False

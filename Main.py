@@ -135,11 +135,13 @@ def main():
                     print(f"  [manobra] CONE a vista (alt {cone.altura:.2f}) -> PARANDO...")
                 elif estado == ANALISAR:
                     print(f"  [manobra] parou em {agora - manobra.t_ref:.2f}s -> ANALISANDO o cone")
+                elif estado == SEGUIR and manobra.ignorando:
+                    print(f"  [manobra] cone NAO esta na minha faixa -> segue em frente ({manobra.ultimo})")
                 elif estado == DESVIAR:
                     lado_t = {-1: "pela DIREITA", 1: "pela ESQUERDA", 0: "?"}[desvio.lado]
                     pos = (f"cone {desvio.w_cone_cm:+.0f}cm do centro da faixa"
                            if desvio.w_cone_cm is not None else "posicao nao medida")
-                    print(f"  [manobra] DESVIANDO {lado_t} ({pos})")
+                    print(f"  [manobra] DESVIANDO {lado_t} ({pos}) | cone na MINHA faixa: {manobra.ultimo}")
                 elif estado == SEGUIR:
                     print("  [manobra] desvio terminado -> seguindo a faixa")
                 if estado_ant in (FREAR, ANALISAR) and estado not in (FREAR, ANALISAR):
