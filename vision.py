@@ -116,6 +116,10 @@ class LaneVision:
         # lado e a continua. Enquanto True, o aprendizado do lado fica parado.
         self.congelar_lado = False
 
+        # Piloto liga isso so com o carro PARANDO/ANALISANDO: achar o cone na
+        # imagem da pista custa ~1/3 do tempo da visao e so serve nessa hora.
+        self.medir_cone = False
+
         # carro em cima da faixa OPOSTA (depois de cruzar a pontilhada)?
         self._prev_media = None     # centro da faixa (px) no quadro anterior
         self._opp_janela = 0        # quadros restantes em que a correcao vale
@@ -610,7 +614,7 @@ class LaneVision:
         res.center_x = alvo
         res.valid = True
 
-        if config.CONE_NA_PISTA:
+        if config.CONE_NA_PISTA and self.medir_cone:
             res.cone_w_cm, res.cone_px = self._cone_na_pista(frame, y0, centros)
 
         if debug:

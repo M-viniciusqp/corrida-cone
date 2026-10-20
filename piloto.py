@@ -63,6 +63,7 @@ class Piloto:
         # durante o desvio o carro cruza a pontilhada: nao deixa a visao
         # "aprender" qual lado e a continua com a imagem desse momento
         self.vision.congelar_lado = desvio.ativo or desvio.faixa_outra
+        self.vision.medir_cone = manobra.estado in (FREAR, ANALISAR)
         res = self.vision.process(frame_pista, debug=self.debug_pista)
         self.res = res
 
