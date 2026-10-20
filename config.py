@@ -315,7 +315,7 @@ CONE_FRENTE_X = 0.5            # |x| menor que isso = o cone esta de frente (na 
 CONE_FAIXA_TEMPO_S = 0.7       # tempo com o alvo na outra faixa pra considerar que o carro
                                # ja esta la
 CONE_TRAVA_ALTURA_MIN = 0.12     # a trava so vale com o cone a vista e pelo menos assim de perto
-CONE_TRAVA_LADO_CONE = False    # nunca esterca pro lado do cone que esta passando
+CONE_TRAVA_LADO_CONE = True     # nunca esterca pro lado do cone que esta passando
 CONE_PALPITE_VOLTA = True       # cone novo de frente logo apos cruzar: passa pelo lado de volta
 CONE_COMPROMISSO_LONGE = 0.20   # um cone NOVO so e ignorado enquanto estiver mais longe que
                                 # isso (~1 m); mais perto ele esta no caminho e e tratado
@@ -357,7 +357,7 @@ CONE_SEQ_PARADA_MIN_S = 0.1     # em sequencia: parada minima mais curta
 CONE_SEQ_ANALISE_S = 0.1        # em sequencia: analise mais curta
 CONE_ARRANQUE_VEL = 0.35        # empurrao ao sair da parada (vence o atrito do repouso)
 CONE_ARRANQUE_S = 0.4           # duracao do empurrao
-CONE_FAIXA_PERSISTE = True      # depois de desviar FICA na outra faixa; so troca quando um cone na faixa dela pedir
+CONE_FAIXA_PERSISTE = False     # depois de desviar FICA na outra faixa; so troca quando um cone na faixa dela pedir
 CONE_PONT_TOL_CM = 14.0        # medida pela pontilhada que discorda da geometria por mais que isso e descartada
 CONE_PARAR_ALTURA = 0.0    # parada DESLIGADA (o carro desvia em vez de parar)
                            # Se quiser a rede de seguranca: 0.50

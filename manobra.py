@@ -122,6 +122,7 @@ class Manobra:
             if agora - self.t_estado >= analise_s:
                 if cone is not None and cone.found:
                     desvio.liberado = True
+                    desvio.congelar_decisao(cone, lane)
                     self._rearmado = False
                     self._t_sem_cone = None
                     self._alt_max = cone.altura
@@ -162,6 +163,7 @@ class Manobra:
         if fim or agora - self.t_estado > config.CONE_DESVIO_MAX_S:
             self.t_ultimo_gatilho = agora
             desvio.liberado = False
+            desvio.descongelar()
             self._muda(SEGUIR, agora)
         return self.estado
 

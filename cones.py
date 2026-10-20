@@ -363,6 +363,8 @@ class ConeAvoider:
         self._faixa_alvo_outra = False
         self.off_base = 0.0        # deslocamento que mantem o carro na faixa em que esta
         self._alt_pico = 0.0       # maior altura do cone que esta sendo passado (distingue cone NOVO)
+        self._congelado = False    # decisao (lado + posicao do cone) travada durante o desvio
+        self._w_fixo = None
         self._t_outra = None       # desde quando o alvo planejado esta na outra faixa
         self.dist_cont_cm = None   # distancia do cone ate a continua (cm)
         self.larg = 0.0            # largura do cone (x norm.) -> ganho do esterco
@@ -391,6 +393,8 @@ class ConeAvoider:
             self._faixa_alvo_outra = False
         self.lado = 0
         self._alt_pico = 0.0
+        self._congelado = False
+        self._w_fixo = None
         self.prox = 0.0
         self.ativo = False
         self.parar = False
@@ -558,7 +562,23 @@ class ConeAvoider:
         # pista = da linha externa esquerda (-1.5*lw) ate a continua (+0.5*lw)
         return (-1.5 * lw - config.CONE_FORA_PISTA_CM) <= w <= (0.5 * lw + config.CONE_FORA_PISTA_CM)
 
+    def congelar_decisao(self, cone, lane):
+        """Trava o lado e a posicao do cone na que foi medida COM O CARRO
+        PARADO. Com o cone ao lado do carro a imagem nao serve mais pra medir
+        (a posicao virava -25, -56, +2 cm e o lado trocava no meio da
+        passagem)."""
+        w, _ = self._w_cone(cone, lane)
+        if w is not None and self.lado != 0:
+            self._w_fixo = w
+            self._congelado = True
+
+    def descongelar(self):
+        self._congelado = False
+        self._w_fixo = None
+
     def reiniciar_medidas(self):
+        self._congelado = False
+        self._w_fixo = None
         """Esquece as medidas da aproximacao (de longe, com o carro andando e
         balancando) pra medir de novo com o carro parado."""
         self._w_mem = None
@@ -739,6 +759,8 @@ class ConeAvoider:
         CONE_TROCA_PERSISTE_S, e so com o cone ainda longe -- trocar de lado
         colado e pior que seguir. Sem medida, nunca troca (so o palpite
         inicial)."""
+        if self._congelado:
+            return              # decidido com o carro parado: nao muda no meio da passagem
         prop, medido = self._propor_lado(cone, lane)
 
         # e OUTRO cone? sumiu por um tempo, ou o mais alto mudou (o cone
@@ -813,6 +835,12 @@ class ConeAvoider:
         return wp
 
     def _w_cone(self, cone, lane):
+        if self._congelado and self._w_fixo is not None:
+            self.conf = 1.0
+            return self._w_fixo, True
+        return self._w_cone_medir(cone, lane)
+
+    def _w_cone_medir(self, cone, lane):
         """Posicao lateral do cone, em cm a partir do CENTRO da pista
         (+ = direita). (valor, medido). medido=True vem da distancia ate a
         continua na imagem do cone (exata, nao depende do giro do carro);
