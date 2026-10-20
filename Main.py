@@ -14,6 +14,7 @@ Duas cameras:
 O cone nao assume o controle: ele soma um deslocamento ao erro da pista.
 """
 
+import os
 import time
 import cv2
 
@@ -30,7 +31,12 @@ DEBUG = False          # desligado = mais FPS = reacao mais rapida
 
 
 def main():
+    global DEBUG
     print("Piloto autonomo: navegando ENTRE as faixas.")
+    if DEBUG and not os.environ.get("DISPLAY"):
+        # terminal remoto (SSH / Pi Connect): imshow derruba o programa (Qt/xcb)
+        print("Sem tela neste terminal (DISPLAY vazio): janelas de debug desligadas.")
+        DEBUG = False
 
     cap = abrir_camera(config.CAMERA_PISTA_ID, config.CAMERA_RES, "pista")
     if not cap.isOpened():

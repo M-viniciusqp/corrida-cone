@@ -27,12 +27,12 @@ STEER_INVERT = False
 # =====================================================================
 # 3. VELOCIDADE (0.0 a 1.0)
 # =====================================================================
-VELOCIDADE_BASE    = 0.30   # BAIXA de proposito pra validar o desvio de cones.
+VELOCIDADE_BASE    = 0.25   # BAIXA de proposito pra validar o desvio de cones.
                             # Suba de 0.05 em 0.05 (ate 1.00) conforme ficar
                             # estavel. NUNCA deixe abaixo de VELOCIDADE_MINIMA
                             # (0.25), senao o speed_for() inverte. O freio por
                             # FPS baixo e o de curva fechada continuam ativos.
-VELOCIDADE_MINIMA  = 0.25   # subiu de 0.35 -- piso normal de curva
+VELOCIDADE_MINIMA  = 0.22   # subiu de 0.35 -- piso normal de curva
 VELOCIDADE_PERDIDO = 0.18   # perdeu a pista, andando devagar procurando
 
 FPS_MINIMO_SEGURO = 15.0
@@ -97,7 +97,7 @@ SPEED_CURVATURA_PESO  = 75.0   # baixou de 90.0 -- mesma logica
 
 CURVA_FECHADA_LIMIAR     = 0.004
 CURVA_FECHADA_RANGE      = 0.014
-VELOCIDADE_MINIMA_FECHADA = 0.22   # subiu de 0.32 -- piso mais alto so pra
+VELOCIDADE_MINIMA_FECHADA = 0.20   # subiu de 0.32 -- piso mais alto so pra
                                     # curva bem fechada tambem
 
 # =====================================================================
@@ -137,7 +137,7 @@ MAX_FRAMES_PERDIDO = 12
 # da manobra. Nesse periodo: segura o ultimo esterco, anda numa velocidade
 # segura, e tolera ~2 s sem leitura.
 MAX_FRAMES_PERDIDO_DESVIO   = 60
-VELOCIDADE_PERDIDO_DESVIO   = 0.25
+VELOCIDADE_PERDIDO_DESVIO   = 0.20
 TURN_DECAI_PERDIDO_DESVIO   = 0.985
 
 # =====================================================================
