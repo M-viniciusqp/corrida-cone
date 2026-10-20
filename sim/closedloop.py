@@ -29,8 +29,7 @@ import controller
 import cones as cones_mod
 from vision import LaneVision
 from controller import SteeringPID, speed_for
-from cones import ConeVision, ConeAvoider
-from manobra import Manobra
+from piloto import Piloto
 
 
 class Clock:
@@ -223,91 +222,29 @@ def hit_cone(car, c):
     return math.hypot(dx - qx, dy - qy) < CONE_W / 2 * 0.9
 
 
-# ------------------------------------------------------------ piloto (replica o Main.py)
-class Pilot:
-    def __init__(self):
-        self.vision = LaneVision()
-        self.cv = ConeVision()
-        self.pid = SteeringPID()
-        self.desvio = ConeAvoider()
-        self.manobra = Manobra()
-        self.peq_ant = None
-        self.cone = None
-        self.turn = 0.0
-        self.speed = 0.0
-        self.frame_anterior_confiavel = True
-        self.res = None
-        self.offset = 0.0
-
+# ------------------------------------------------------------ piloto
+# O MESMO Piloto do carro (piloto.py): o simulador testa o codigo que anda na pista.
+class Pilot(Piloto):
     dump_t = ()
-    def step(self, lane_img, cone_img):
-        dbg = any(abs(Clock.t - t) < 0.5 / 30 for t in self.dump_t)
-        self.vision.congelar_lado = self.desvio.ativo or self.desvio.faixa_outra
-        res = self.vision.process(lane_img, debug=dbg)
-        if dbg:
-            tag = f"dump_{Clock.t:05.2f}"
-            cv2.imwrite(tag + "_lane.png", np.vstack([res.debug_view, res.debug_mask]))
-            print(f"[dump {tag}] e={res.error:+.2f} motivo={res.motivo} sig={res.sinal_continuo:+.2f} hw={res.hw_px}")
-        self.res = res
-        peq = cv2.cvtColor(cv2.resize(lane_img, (64, 36), interpolation=cv2.INTER_AREA),
-                           cv2.COLOR_BGR2GRAY).astype(np.int16)
-        mov_pista = float(np.abs(peq - self.peq_ant).mean()) if self.peq_ant is not None else None
-        self.peq_ant = peq
-        if cone_img is not None:
-            sc = res.sinal_continuo
-            lado_s = 1 if sc > 0.5 else (-1 if sc < -0.5 else 0)
-            self.cone = self.cv.process(cone_img, lado_solida=lado_s)
-        self.manobra.update(Clock.t, self.cone, cone_img is not None, mov_pista, self.desvio, res)
 
-        if res.valid and res.motivo == "ok" and (res.found_left or res.found_right):
-            if not self.frame_anterior_confiavel:
-                self.pid.marcar_retomada()
-            self.frame_anterior_confiavel = True
-            offset = self.desvio.update(self.cone, res)
-            self.offset = offset
-            if config.CONE_OFFSET_NO_PID or not self.desvio.modo_pos:
-                turn = self.pid.update(res.error, res.heading)
-                if offset:
-                    adj = self.desvio.ganho_esterco(config.PID_KP) * offset
-                    if config.STEER_INVERT:
-                        adj = -adj
-                    turn = max(-1.0, min(1.0, turn + adj))
-            else:
-                emax = getattr(config, "ERRO_MAX", 1.0)
-                base = res.error_u if getattr(config, "CONE_ERRO_SEM_SATURAR", False) else res.error
-                erro = max(-emax, min(emax, base + offset * config.CONE_GANHO_POS))
-                if config.CONE_TRAVA_LADO_CONE and self.desvio.cone_do_lado(self.cone):
-                    if self.desvio.lado > 0:
-                        erro = min(erro, 0.0)
-                    else:
-                        erro = max(erro, 0.0)
-                turn = self.pid.update(erro, res.heading)
-                if self.manobra.estado == "DESVIAR" and abs(self.desvio.offset - self.desvio.off_base) > 0.1:
-                    turn = max(-1.0, min(1.0, turn * getattr(config, "CONE_GANHO_TURN_DESVIO", 1.0)))
-            self.turn = turn
-            speed = speed_for(turn, res.curvature) * self.desvio.fator_velocidade()
-            if self.desvio.parar:
-                speed = 0.0
-            if self.manobra.parado:
-                speed, turn = 0.0, 0.0
-                self.turn = 0.0
-            self.speed = speed
-        elif self.vision.lost_frames <= (config.MAX_FRAMES_PERDIDO_DESVIO
-                                         if self.vision.em_desvio else config.MAX_FRAMES_PERDIDO):
-            self.frame_anterior_confiavel = False
-            if self.manobra.parado:
-                self.turn, self.speed = 0.0, 0.0
-            elif self.vision.em_desvio:
-                self.turn *= config.TURN_DECAI_PERDIDO_DESVIO
-                self.speed = config.VELOCIDADE_PERDIDO_DESVIO
-            else:
-                self.turn *= 0.85
-                self.speed = config.VELOCIDADE_PERDIDO
-        else:
-            self.turn, self.speed = 0.0, 0.0
-            self.pid.reset()
-            self.desvio.reset()
-        return self.turn, self.speed
+    def __init__(self):
+        super().__init__()
+        self.offset = 0.0
+        self._cone_img = None
+
+    def step(self, lane_img, cone_img):
+        self.debug_pista = any(abs(Clock.t - t) < 0.5 / 30 for t in self.dump_t)
+        # a camera de cone entrega quadro novo a cada 2 quadros da pista; entre
+        # eles o cone anterior continua valendo (como no carro)
+        novo = cone_img is not None
+        if novo:
+            self._cone_img = cone_img
+        turn, speed = super().step(Clock.t, lane_img, self._cone_img, novo)
+        self.offset = self.desvio.offset
+        if self.debug_pista and self.res.debug_view is not None:
+            tag = f"dump_{Clock.t:05.2f}"
+            cv2.imwrite(tag + "_lane.png", np.vstack([self.res.debug_view, self.res.debug_mask]))
+        return turn, speed
 
 
 LANE_CAM = Cam(480, 240, 215.0, 0.18, 30.0, 0.10)   # f=215: meia-largura da faixa ~135px no fundo (como a real)

@@ -9,12 +9,9 @@ sys.path.insert(0, os.getcwd()); sys.path.insert(0, os.path.join(os.getcwd(), "s
 from multiprocessing import Pool
 
 VARIANTS = {
- "final": dict(),
- "old":  dict(CONE_NA_PISTA=False, CONE_USA_POS_CARRO=False),
- "geo":  dict(CONE_NA_PISTA=False, CONE_USA_POS_CARRO=True),
- "new":  dict(CONE_NA_PISTA=True,  CONE_USA_POS_CARRO=True, CONE_ERRO_SEM_SATURAR=False),
- "newU": dict(CONE_NA_PISTA=True,  CONE_USA_POS_CARRO=True, CONE_ERRO_SEM_SATURAR=True),
- "geoU": dict(CONE_NA_PISTA=False, CONE_USA_POS_CARRO=True, CONE_ERRO_SEM_SATURAR=True),
+ "final":      dict(),                              # o config como esta
+ "sem_manobra": dict(CONE_PARA_E_ANALISA=False),    # desvia andando, sem parar
+ "persiste":   dict(CONE_FAIXA_PERSISTE=True),      # fica na faixa pra onde desviou
 }
 
 def job(args):

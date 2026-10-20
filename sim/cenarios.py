@@ -21,14 +21,10 @@ import config
 from closedloop import Track, Cam, run, LANE_W, CONE_W
 if os.environ.get('SIM_TRAVA') == '0':
     config.CONE_TRAVA_LADO_CONE = False   # SIM_TRAVA
-if os.environ.get('SIM_VOLTA') == '0':
-    config.CONE_PALPITE_VOLTA = False
 if os.environ.get('SIM_LONGE'):
     config.CONE_COMPROMISSO_LONGE = float(os.environ['SIM_LONGE'])
 if os.environ.get('SIM_SLEW'):
     config.CONE_OFFSET_SLEW = float(os.environ['SIM_SLEW'])
-if os.environ.get('SIM_FAIXA') == '0':
-    config.CONE_USA_FAIXA_CARRO = False
 if os.environ.get('SIM_VEL55') == '1':   # iguala as velocidades do commit anterior
     config.VELOCIDADE_BASE, config.VELOCIDADE_MINIMA = 0.55, 0.45
     config.VELOCIDADE_MINIMA_FECHADA, config.VELOCIDADE_PERDIDO = 0.38, 0.22
