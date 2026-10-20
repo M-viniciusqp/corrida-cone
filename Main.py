@@ -94,7 +94,7 @@ def main():
             frame = cv2.resize(frame, config.CAMERA_RES)
             # durante o desvio o carro cruza a pontilhada: nao deixa a visao
             # "aprender" qual lado e a continua com a imagem desse momento
-            vision.congelar_lado = desvio.ativo
+            vision.congelar_lado = desvio.ativo or desvio.faixa_outra
             res = vision.process(frame, debug=DEBUG)
 
             # quanto a imagem da pista mudou desde o quadro anterior: com o
@@ -192,6 +192,11 @@ def main():
                         else:
                             erro = max(erro, 0.0)
                     turn = pid.update(erro, res.heading)
+                    if (manobra.estado == DESVIAR and
+                            abs(desvio.offset - desvio.off_base) > 0.1):
+                        # desviando: direcao mais forte (o seguidor de faixa sozinho
+                        # chega devagar no alvo e nao da tempo antes do cone)
+                        turn = max(-1.0, min(1.0, turn * config.CONE_GANHO_TURN_DESVIO))
                 speed = speed_for(turn, res.curvature) * desvio.fator_velocidade()
                 if desvio.parar:
                     speed = 0.0     # cone colado na frente: nao bate

@@ -24,7 +24,14 @@ def job(args):
     for k, v in extra.items(): setattr(config, k, v)
     buf = io.StringIO()
     with contextlib.redirect_stdout(buf):
-        o = cenarios.rodar(sem, 0.8, tipo=tipo)
+        if tipo == "ovalalt":
+            tr = cenarios.pista(1.0, True)
+            cs = cenarios.cones_alternados(tr, 6, 2.2, primeiro="R" if sem % 2 == 0 else "L", s0=2.0 + 0.15 * sem)
+            from closedloop import run
+            o = run(tr, [c[2] for c in cs], v_max=0.8, t_max=tr.L / (0.8 * 0.35) * 1.3)
+            print(f"semente {sem}: batidas={len(o['hits'])}/{len(cs)} progresso={o['s_end']:.1f}/{tr.L:.1f}")
+        else:
+            o = cenarios.rodar(sem, 0.8, tipo=tipo)
     return (var, tipo, sem, len(o["hits"]), o["done"], round(o["s_end"], 1), o["offtrack"])
 
 if __name__ == "__main__":

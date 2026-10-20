@@ -334,21 +334,24 @@ CONE_CRUZAR_FRAC = 0.8
 # (altura relativa ou base cortada) -> para o carro em vez de bater.
 # 0.0 desliga.
 CONE_PARA_E_ANALISA = True      # PARA quando ve o cone, espera parar, analisa e so entao desvia (manobra.py)
-CONE_GATILHO_ALTURA = 0.21      # altura do cone na imagem que dispara a parada. Cone de 25 cm:
-                                # altura = 25*f/(dist*240), f~240px -> 0.21 ~ 120 cm, 0.28 ~ 90 cm, 0.50 ~ 50 cm.
+CONE_GATILHO_ALTURA = 0.25      # altura do cone na imagem que dispara a parada. Cone de 25 cm:
+                                # altura = 25*f/(dist*240), f~240px -> 0.21 ~ 120 cm, 0.25 ~ 100 cm, 0.28 ~ 90 cm, 0.50 ~ 50 cm.
                                 # AJUSTE pelo 'alt' do log: e a distancia da parada.
 CONE_GATILHO_QUADROS = 2        # quadros seguidos vendo o cone no gatilho (evita falso positivo)
-CONE_PARADA_MIN_S = 0.5         # tempo minimo parado antes de analisar (inercia dos motores)
+CONE_PARADA_MIN_S = 0.3         # tempo minimo parado antes de analisar (inercia dos motores)
 CONE_PARADA_MAX_S = 1.5         # se nao parar de se mexer nesse tempo, analisa assim mesmo
-CONE_PARADA_CALMO_N = 3         # quadros seguidos 'sem se mexer' pra considerar parado
+CONE_PARADA_CALMO_N = 2         # quadros seguidos 'sem se mexer' pra considerar parado
 CONE_PARADO_D_ALT = 0.004       # o cone mudou de altura menos que isso entre quadros = parado
 CONE_PARADO_D_X = 0.015         # idem, posicao lateral (-1..+1)
 CONE_PARADO_DIFF = 3.0          # mudanca media (0-255) da imagem da pista = ainda mexendo
-CONE_ANALISE_S = 0.35           # tempo medindo o cone com o carro parado
+CONE_ANALISE_S = 0.25           # tempo medindo o cone com o carro parado
 CONE_REARME_S = 0.5             # durante o desvio: cone sumiu por isso = ja passou; um novo pode parar
 CONE_COOLDOWN_S = 1.0           # depois de um desvio, tempo sem parar de novo
 CONE_OFFSET_SLEW_DESVIO = 3.0     # velocidade do desvio saindo da parada (erro/s); 0.8 = suave
 CONE_DESVIO_MAX_S = 9.0         # seguranca: desvio nao dura mais que isso
+CONE_GANHO_TURN_DESVIO = 1.0     # multiplica a direcao SO enquanto desvia (1.0 = igual; 1.5-2.0 = mais brusco)
+CONE_FAIXA_PERSISTE = True      # depois de desviar FICA na outra faixa; so troca quando um cone na faixa dela pedir
+CONE_PONT_TOL_CM = 14.0        # medida pela pontilhada que discorda da geometria por mais que isso e descartada
 CONE_PARAR_ALTURA = 0.0    # parada DESLIGADA (o carro desvia em vez de parar)
                            # Se quiser a rede de seguranca: 0.50
 CONE_TROCA_LADO_ALTURA_MAX = 0.25   # so troca de lado no meio da manobra se o

@@ -85,7 +85,7 @@ class Manobra:
             desvio.liberado = False
             if (self.vistos >= config.CONE_GATILHO_QUADROS and
                     agora - self.t_ultimo_gatilho > config.CONE_COOLDOWN_S):
-                desvio.reset()          # cone novo: esquece o desvio anterior
+                desvio.reset(manter_faixa=True)   # cone novo: esquece o desvio anterior, mas fica na faixa
                 self.t_ref = agora
                 self._muda(FREAR, agora)
                 self.vistos = 0
@@ -142,12 +142,12 @@ class Manobra:
             self.vistos = self.vistos + 1 if self._gatilho(cone) else 0
             if self.vistos >= config.CONE_GATILHO_QUADROS:
                 # outro cone no gatilho: para de novo
-                desvio.reset()
+                desvio.reset(manter_faixa=True)
                 self.t_ref = agora
                 self._muda(FREAR, agora)
                 self.vistos = 0
                 return self.estado
-        fim = (not desvio.ativo and abs(desvio.offset) < 0.05)
+        fim = (not desvio.ativo and abs(desvio.offset - desvio.off_base) < 0.05)
         if fim or agora - self.t_estado > config.CONE_DESVIO_MAX_S:
             self.t_ultimo_gatilho = agora
             desvio.liberado = False

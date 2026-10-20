@@ -242,7 +242,7 @@ class Pilot:
     dump_t = ()
     def step(self, lane_img, cone_img):
         dbg = any(abs(Clock.t - t) < 0.5 / 30 for t in self.dump_t)
-        self.vision.congelar_lado = self.desvio.ativo
+        self.vision.congelar_lado = self.desvio.ativo or self.desvio.faixa_outra
         res = self.vision.process(lane_img, debug=dbg)
         if dbg:
             tag = f"dump_{Clock.t:05.2f}"
@@ -282,6 +282,8 @@ class Pilot:
                     else:
                         erro = max(erro, 0.0)
                 turn = self.pid.update(erro, res.heading)
+                if self.manobra.estado == "DESVIAR" and abs(self.desvio.offset - self.desvio.off_base) > 0.1:
+                    turn = max(-1.0, min(1.0, turn * getattr(config, "CONE_GANHO_TURN_DESVIO", 1.0)))
             self.turn = turn
             speed = speed_for(turn, res.curvature) * self.desvio.fator_velocidade()
             if self.desvio.parar:

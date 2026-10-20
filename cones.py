@@ -56,7 +56,7 @@ import config
 class ConeResult:
     __slots__ = ("found", "cx", "altura", "proximidade", "bbox",
                  "n_candidatos", "debug_view", "debug_mask", "lat", "larg",
-                 "toca_base", "d_solida_w", "lado_solida")
+                 "toca_base", "d_solida_w", "lado_solida", "dx_pont_w")
 
     def __init__(self):
         self.found = False
@@ -70,6 +70,9 @@ class ConeResult:
         self.n_candidatos = 0
         self.d_solida_w = None    # dist. do cone ate a CONTINUA (larguras de cone)
         self.lado_solida = 0      # de que lado a continua foi procurada (-1/+1)
+        self.dx_pont_w = None     # cone - PONTILHADA na mesma fileira, em larguras de
+                                  # cone (+ = cone a DIREITA dela). Imune ao giro do
+                                  # carro e nao precisa ver a continua.
         self.debug_view = None
         self.debug_mask = None
 
@@ -144,9 +147,11 @@ class ConeVision:
                 a, b = config.CONE_ALTURA_LONGE, config.CONE_ALTURA_PERTO
                 res.proximidade = float(np.clip((res.altura - a) / (b - a), 0.0, 1.0))
 
+            self._dx_pont = None
             if lado_solida:
                 res.lado_solida = 1 if lado_solida > 0 else -1
-                res.d_solida_w = self._dist_solida(frame, melhor, res.lado_solida)
+            res.d_solida_w = self._dist_solida(frame, melhor, res.lado_solida)
+            res.dx_pont_w = self._dx_pont
 
         if debug:
             res.debug_view = self._draw(frame, res)
@@ -263,6 +268,19 @@ class ConeVision:
                 x_b = float(cc.mean())
             todas.append((x_b, n / max(rows_ok, 1), n))
 
+        # PONTILHADA (linha de presenca parcial: tem buracos) mais proxima do
+        # cone, na MESMA fileira da base: em larguras de cone. De perto (carro
+        # parado ~1 m) os tracos aparecem separados; a posicao relativa nao
+        # muda com o giro do carro e nao depende de a continua estar no quadro.
+        pont = [(x, p, n) for (x, p, n) in todas
+                if 0.12 <= p <= 0.75 and n >= 3 and abs(x - xc) > 0.15 * w_ref
+                and abs(x - xc) / w_ref <= 2.5 * config.PISTA_LARGURA_CM / config.CONE_LARGURA_CM]
+        if pont:
+            x_p = min(pont, key=lambda t: abs(t[0] - xc))[0]
+            self._dx_pont = (xc - x_p) / w_ref
+        if lado == 0:
+            return None
+
         lim = 0.2 * w_ref
         sinal = 1.0 if lado > 0 else -1.0
         # so conta linha a uma distancia plausivel: a continua fica, no
@@ -341,6 +359,10 @@ class ConeAvoider:
         self.liberado = True       # manobra.py: False = so OBSERVA o cone (nao desvia ainda)
         self.na_faixa = None       # True = cone na faixa do carro, False = outra
         self.na_outra = False      # o CARRO esta na faixa do outro lado da pontilhada
+        self.faixa_outra = False   # o carro FICA na outra faixa (nao volta pra de antes ao passar o cone)
+        self._faixa_alvo_outra = False
+        self.off_base = 0.0        # deslocamento que mantem o carro na faixa em que esta
+        self._alt_pico = 0.0       # maior altura do cone que esta sendo passado (distingue cone NOVO)
         self._t_outra = None       # desde quando o alvo planejado esta na outra faixa
         self.dist_cont_cm = None   # distancia do cone ate a continua (cm)
         self.larg = 0.0            # largura do cone (x norm.) -> ganho do esterco
@@ -362,9 +384,13 @@ class ConeAvoider:
         self._disc_t = None        # desde quando a proposta discorda do lado
         self._t_ant = None         # p/ limitar a velocidade de variacao
 
-    def reset(self):
-        self.offset = 0.0
+    def reset(self, manter_faixa=False):
+        if not manter_faixa:
+            self.offset = 0.0
+            self.faixa_outra = False
+            self._faixa_alvo_outra = False
         self.lado = 0
+        self._alt_pico = 0.0
         self.prox = 0.0
         self.ativo = False
         self.parar = False
@@ -411,6 +437,14 @@ class ConeAvoider:
                 and cone.altura < config.CONE_COMPROMISSO_LONGE):
             visivel = False
 
+        # com a manobra (para -> analisa -> desvia), um cone BEM MENOR que o que
+        # esta sendo passado e OUTRO cone, mais longe: nao age nele agora (a
+        # manobra para por ele quando chegar no gatilho); segue segurando o
+        # desvio atual.
+        if (visivel and self.liberado and config.CONE_PARA_E_ANALISA
+                and self._alt_pico > 0.3 and cone.altura < 0.5 * self._alt_pico):
+            visivel = False
+
         self.parar = False
         self._w_lane = None
         if visivel and lane is not None and config.CONE_NA_PISTA:
@@ -421,6 +455,8 @@ class ConeAvoider:
                 self._w_lane = w_l
         if visivel:
             e_pista = lane.error if lane is not None else 0.0
+            base_off = self._off_base(lane)
+            self.off_base = base_off
             self._decidir_lado(cone, agora, e_pista, lane)
             # a folga ja e geometrica (larguras de cone), entao o pedido
             # cresce sozinho com a aproximacao; a rampa so evita reagir a
@@ -453,9 +489,9 @@ class ConeAvoider:
                 # desvia quando liberado; antes disso so observa
                 agindo = self.liberado
             if not agindo:
-                alvo = 0.0
+                alvo = base_off
             if not agindo:
-                alvo = 0.0
+                alvo = base_off
 
             # rede de seguranca (desligada por padrao): cone colado BEM na
             # frente -> para
@@ -470,9 +506,13 @@ class ConeAvoider:
             self.prox = cone.proximidade
             self.larg = cone.larg
             self.ativo = agindo
+            if agindo and self.liberado:
+                self._alt_pico = max(self._alt_pico, cone.altura)
+            if agindo and self.w_alvo_cm is not None:
+                self.faixa_outra = self._faixa_alvo_outra   # fica na faixa pra onde foi
             self._atualiza_faixa(agindo, agora)
         else:
-            alvo = self._sem_cone(agora)
+            alvo = self._sem_cone(agora, lane)
 
         # suaviza (EMA) e ainda limita a velocidade de variacao: o cone
         # aparece/some de repente e isso vira degrau no volante.
@@ -508,6 +548,7 @@ class ConeAvoider:
         self._lado_medido = False
         self.lado = 0
         self._disc_t = None
+        self._alt_pico = 0.0
 
     def cone_do_lado(self, cone):
         """True se ha um cone A VISTA, perto, do lado que esta sendo passado
@@ -581,6 +622,15 @@ class ConeAvoider:
             w = float(np.median(lista[-7:]))
             lw = config.PISTA_LARGURA_CM
             dentro = w if pont > 0 else -w          # + = rumo a continua
+            cone_na_outra = dentro < -lw / 2.0 - config.CONE_NA_LINHA_CM
+            self.na_faixa = not cone_na_outra
+            return (-pont if cone_na_outra else pont), True
+
+        # 0) cone x PONTILHADA na mesma fileira (a regra do usuario, literal)
+        wp = self._w_pont_ok(cone, lane)
+        if wp is not None and pont is not None:
+            lw = config.PISTA_LARGURA_CM
+            dentro = wp if pont > 0 else -wp
             cone_na_outra = dentro < -lw / 2.0 - config.CONE_NA_LINHA_CM
             self.na_faixa = not cone_na_outra
             return (-pont if cone_na_outra else pont), True
@@ -717,12 +767,46 @@ class ConeAvoider:
             self._lado_medido = True
             self._disc_t = None
 
+    def _w_pont(self, cone, lane):
+        """Posicao do cone (cm do centro da faixa direita, + = direita) pela
+        distancia ate a PONTILHADA na imagem do cone. None se nao deu."""
+        s = getattr(lane, "sinal_continuo", 0.0) if lane is not None else 0.0
+        if cone.dx_pont_w is None or abs(s) < 0.5:
+            return None
+        lw, cw = config.PISTA_LARGURA_CM, config.CONE_LARGURA_CM
+        dx = cone.dx_pont_w * cw
+        if abs(dx) > 1.2 * lw:
+            return None
+        w_pont = -lw / 2.0 if s > 0 else lw / 2.0     # onde esta a pontilhada
+        return w_pont + dx
+
+    def _w_pont_ok(self, cone, lane):
+        """_w_pont, mas descarta se discordar muito da geometria (carro +
+        lat): a linha mais proxima do cone pode nao ser a pontilhada."""
+        wp = self._w_pont(cone, lane)
+        if wp is None:
+            return None
+        g = self._w_geometrico(cone, lane, grava=False)
+        if g is not None and abs(wp - g) > config.CONE_PONT_TOL_CM:
+            return None
+        return wp
+
     def _w_cone(self, cone, lane):
         """Posicao lateral do cone, em cm a partir do CENTRO da pista
         (+ = direita). (valor, medido). medido=True vem da distancia ate a
         continua na imagem do cone (exata, nao depende do giro do carro);
         senao e uma estimativa pela geometria (aceita a longe)."""
         lw, cw = config.PISTA_LARGURA_CM, config.CONE_LARGURA_CM
+        g = self._w_geometrico(cone, lane, grava=True)     # mantem a memoria geometrica
+        wp = self._w_pont_ok(cone, lane)
+        if wp is not None:
+            if cone.altura >= config.CONE_MEDIDA_ALTURA_MIN:
+                self._w_obs.append(wp)
+                if len(self._w_obs) > 25:
+                    self._w_obs.pop(0)
+                self._w_mem = float(np.median(self._w_obs))
+            self.conf = 1.0
+            return self._w_mem if self._w_mem is not None else wp, True
         if self._w_lane is not None:
             self._w_lane_obs.append(self._w_lane)
             if len(self._w_lane_obs) > 12:
@@ -755,7 +839,7 @@ class ConeAvoider:
             return self._w_mem, True
         if lane is None or not lane.hw_px:
             return None, False
-        w = self._w_geometrico(cone, lane, grava=True)
+        w = g
         if w is None:
             return None, False
         # confianca sobe com o numero de estimativas (o cone e fixo: a
@@ -813,6 +897,7 @@ class ConeAvoider:
             w_min, w_max = -(lw / 2.0 - margem_cont), lw / 2.0 + alem_pont
         w_t = max(w_min, min(w_max, w_t))
         self.w_cone_cm, self.w_alvo_cm = w_cone, w_t
+        self._faixa_alvo_outra = (w_t < -lw / 2.0 - 2.0) if s > 0 else (w_t > lw / 2.0 + 2.0)
 
         # onde o alvo da pista (ja com o vies da pontilhada) esta hoje
         w_now = (lane.center_x - lane.lane_center_x) / lane.hw_px * (lw / 2.0)
@@ -820,6 +905,24 @@ class ConeAvoider:
             off_cm = min(0.0, w_t - w_now)        # so empurra pra ESQUERDA
         else:
             off_cm = max(0.0, w_t - w_now)        # so empurra pra DIREITA
+        metade = config.CAMERA_RES[0] / 2.0
+        return off_cm / (lw / 2.0) * lane.hw_px / metade
+
+    def _off_base(self, lane):
+        """Deslocamento (unidades do erro) que mantem o carro no centro da
+        OUTRA faixa depois que desviou pra la: o carro NAO volta sozinho pra
+        faixa de antes, so quando um cone na faixa dele pedir. 0 se esta na
+        faixa de sempre."""
+        if (not config.CONE_FAIXA_PERSISTE or not self.faixa_outra or lane is None
+                or not lane.hw_px):
+            return 0.0
+        s = getattr(lane, "sinal_continuo", 0.0)
+        if abs(s) < 0.5:
+            return 0.0
+        lw = config.PISTA_LARGURA_CM
+        w_outra = -0.95 * lw if s > 0 else 0.95 * lw      # centro da outra faixa
+        w_now = (lane.center_x - lane.lane_center_x) / lane.hw_px * (lw / 2.0)
+        off_cm = (min(0.0, w_outra - w_now) if s > 0 else max(0.0, w_outra - w_now))
         metade = config.CAMERA_RES[0] / 2.0
         return off_cm / (lw / 2.0) * lane.hw_px / metade
 
@@ -865,11 +968,13 @@ class ConeAvoider:
         lo, hi = self._limites(lane)
         return max(lo, min(hi, off))
 
-    def _sem_cone(self, agora):
+    def _sem_cone(self, agora, lane=None):
         """Cone sumiu (saiu do campo de visao ou falhou a deteccao)."""
+        base = self._off_base(lane)
+        self.off_base = base
         if self._t_visto is None:
             self.ativo = False
-            return 0.0
+            return base
 
         dt = agora - self._t_visto
         segurar = (config.CONE_SEGURAR_S if self._prox_visto >= 0.5
@@ -896,5 +1001,5 @@ class ConeAvoider:
             self.ativo = False
             self.na_outra = False
             self._t_outra = None
-            return 0.0
-        return self._alvo * f
+            return base
+        return base + (self._alvo - base) * f
