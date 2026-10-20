@@ -70,7 +70,7 @@ class Manobra:
         self.mov_pista = mov_pista
         # cone fora da pista (do outro lado das linhas externas): nao e obstaculo
         self._fora_da_pista = (cone is not None and cone.found and lane is not None
-                               and not desvio.no_caminho(cone, lane))
+                               and not desvio.relevante(cone, lane))
 
         # quanto o cone mexeu na imagem desde o quadro novo anterior
         if cone_novo:

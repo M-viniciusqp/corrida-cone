@@ -449,6 +449,9 @@ class ConeAvoider:
                 and self._alt_pico > 0.3 and cone.altura < 0.5 * self._alt_pico):
             visivel = False
 
+        if visivel and lane is not None and not self.relevante(cone, lane):
+            visivel = False             # cone da outra faixa / fora da pista: ignora
+
         self.parar = False
         self._w_lane = None
         if visivel and lane is not None and config.CONE_NA_PISTA:
@@ -545,22 +548,51 @@ class ConeAvoider:
         """O cone esta onde o carro pode bater? False = bem fora da pista (alem
         da linha externa de qualquer lado): nao vale parar por ele. Sem
         estimativa confiavel devolve True (na duvida, trata como obstaculo)."""
-        if cone is None or not cone.found:
+        w = self._estimar_w(cone, lane)
+        if w is None:
             return True
+        lw = config.PISTA_LARGURA_CM
+        # pista = da linha externa esquerda (-1.5*lw) ate a continua (+0.5*lw)
+        return (-1.5 * lw - config.CONE_FORA_PISTA_CM) <= w <= (0.5 * lw + config.CONE_FORA_PISTA_CM)
+
+    def _estimar_w(self, cone, lane):
+        """Melhor estimativa AGORA da posicao do cone (cm do centro da faixa
+        direita, + = direita). None se nao ha como saber."""
+        if cone is None or not cone.found:
+            return None
         lw = config.PISTA_LARGURA_CM
         s = getattr(lane, "sinal_continuo", 0.0) if lane is not None else 0.0
         if abs(s) < 0.5:
-            return True
+            return None
         w = self._w_pont(cone, lane)
         if w is None and cone.d_solida_w is not None and cone.lado_solida != 0:
             d = cone.d_solida_w * config.CONE_LARGURA_CM
             w = (lw / 2.0 - d) if cone.lado_solida > 0 else (-lw / 2.0 + d)
         if w is None:
             w = self._w_geometrico(cone, lane, grava=False)
+        return w
+
+    def relevante(self, cone, lane):
+        """O cone importa pro carro? So se esta na FAIXA DELE (ou em cima da
+        pontilhada). Cone na outra faixa ou fora da pista e ignorado: nem
+        para, nem desvia. Na duvida (sem estimativa) conta como relevante."""
+        if not self.no_caminho(cone, lane):
+            return False
+        if not config.CONE_SO_MINHA_FAIXA:
+            return True
+        # ja desviando / segurando um desvio: o carro pode estar na outra faixa
+        if (self.faixa_outra or abs(self.offset) > 0.1 or abs(self._alvo) > 0.1
+                or self.liberado and self.ativo):
+            return True
+        w = self._estimar_w(cone, lane)
         if w is None:
             return True
-        # pista = da linha externa esquerda (-1.5*lw) ate a continua (+0.5*lw)
-        return (-1.5 * lw - config.CONE_FORA_PISTA_CM) <= w <= (0.5 * lw + config.CONE_FORA_PISTA_CM)
+        lw = config.PISTA_LARGURA_CM
+        s = getattr(lane, "sinal_continuo", 1.0)
+        # a faixa do carro e a da continua; o cone na faixa de la da pontilhada
+        # (alem da folga) nao importa
+        dentro = w if s > 0 else -w                 # + = rumo a continua
+        return dentro >= -lw / 2.0 - config.CONE_NA_LINHA_CM - config.CONE_OUTRA_FAIXA_FOLGA_CM
 
     def congelar_decisao(self, cone, lane):
         """Trava o lado e a posicao do cone na que foi medida COM O CARRO

@@ -333,7 +333,7 @@ CONE_CRUZAR_FRAC = 0.8
 # Rede de seguranca enquanto calibra: cone BEM na frente e quase encostando
 # (altura relativa ou base cortada) -> para o carro em vez de bater.
 # 0.0 desliga.
-CONE_PARA_E_ANALISA = True      # PARA quando ve o cone, espera parar, analisa e so entao desvia (manobra.py)
+CONE_PARA_E_ANALISA = False     # PARA quando ve o cone, espera parar, analisa e so entao desvia (manobra.py)
 CONE_GATILHO_ALTURA = 0.25      # altura do cone na imagem que dispara a parada. Cone de 25 cm:
                                 # altura = 25*f/(dist*240), f~240px -> 0.21 ~ 120 cm, 0.25 ~ 100 cm, 0.28 ~ 90 cm, 0.50 ~ 50 cm.
                                 # AJUSTE pelo 'alt' do log: e a distancia da parada.
@@ -351,6 +351,8 @@ CONE_OFFSET_SLEW_DESVIO = 3.0     # velocidade do desvio saindo da parada (erro/
 CONE_DESVIO_MAX_S = 9.0         # seguranca: desvio nao dura mais que isso
 CONE_GANHO_TURN_DESVIO = 1.0     # multiplica a direcao SO enquanto desvia (1.0 = igual; 1.5-2.0 = mais brusco)
 DEBUG_CADA = 4                  # --ver: mostra as janelas a cada N quadros (menos custo de FPS)
+CONE_SO_MINHA_FAIXA = True      # so reage a cone na FAIXA DO CARRO (ou na pontilhada); cone da outra faixa e ignorado
+CONE_OUTRA_FAIXA_FOLGA_CM = 4.0 # tolerancia pra estimativa ruidosa: cone ate isso alem da pontilhada ainda conta
 CONE_FORA_PISTA_CM = 14.0        # cone alem da linha externa por mais que isso = fora da pista: nao para
 CONE_SEQ_JANELA_S = 3.0         # cone que aparece ate esse tempo depois do desvio anterior = EM SEQUENCIA
 CONE_SEQ_PARADA_MIN_S = 0.1     # em sequencia: parada minima mais curta
