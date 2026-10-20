@@ -207,6 +207,11 @@ def main():
                     speed = 0.0     # cone colado na frente: nao bate
                 if manobra.parado:
                     speed, turn = 0.0, 0.0   # parando/analisando: motores em zero
+                elif (manobra.estado == DESVIAR and
+                        time.time() - manobra.t_estado < config.CONE_ARRANQUE_S):
+                    # arrancando do repouso: o motor nao vence o atrito na velocidade
+                    # baixa e o desvio "demora" pra comecar. Da um empurrao curto.
+                    speed = max(speed, config.CONE_ARRANQUE_VEL)
 
                 # log RAPIDO enquanto desvia (o resumo de 2s e lento demais pra
                 # ver o que aconteceu num desvio que dura ~1s)

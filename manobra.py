@@ -38,6 +38,7 @@ class Manobra:
         self._t_sem_cone = None
         self._alt_max = 0.0         # maior altura do cone visto neste desvio
         self._fora_da_pista = False  # o cone visto esta fora da pista: ignora
+        self.seq = False            # esta parada e de um cone EM SEQUENCIA (tempos mais curtos)
         self.mov_cone = None        # ultimas medidas (pro log)
         self.mov_pista = None
 
@@ -93,6 +94,7 @@ class Manobra:
                     agora - self.t_ultimo_gatilho > config.CONE_COOLDOWN_S):
                 desvio.reset(manter_faixa=True)   # cone novo: esquece o desvio anterior, mas fica na faixa
                 self.t_ref = agora
+                self.seq = (agora - self.t_ultimo_gatilho) < config.CONE_SEQ_JANELA_S
                 self._muda(FREAR, agora)
                 self.vistos = 0
             return self.estado
@@ -104,7 +106,8 @@ class Manobra:
                 self.calmo += 1
             else:
                 self.calmo = 0
-            if ((dt >= config.CONE_PARADA_MIN_S and
+            min_s = config.CONE_SEQ_PARADA_MIN_S if self.seq else config.CONE_PARADA_MIN_S
+            if ((dt >= min_s and
                     self.calmo >= config.CONE_PARADA_CALMO_N) or
                     dt >= config.CONE_PARADA_MAX_S):
                 # carro parado: comeca a medir do zero (as leituras da
@@ -115,7 +118,8 @@ class Manobra:
 
         if self.estado == ANALISAR:
             desvio.liberado = False
-            if agora - self.t_estado >= config.CONE_ANALISE_S:
+            analise_s = config.CONE_SEQ_ANALISE_S if self.seq else config.CONE_ANALISE_S
+            if agora - self.t_estado >= analise_s:
                 if cone is not None and cone.found:
                     desvio.liberado = True
                     self._rearmado = False
@@ -150,6 +154,7 @@ class Manobra:
                 # outro cone no gatilho: para de novo
                 desvio.reset(manter_faixa=True)
                 self.t_ref = agora
+                self.seq = True
                 self._muda(FREAR, agora)
                 self.vistos = 0
                 return self.estado
