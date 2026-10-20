@@ -27,12 +27,12 @@ STEER_INVERT = False
 # =====================================================================
 # 3. VELOCIDADE (0.0 a 1.0)
 # =====================================================================
-VELOCIDADE_BASE    = 0.25   # BAIXA de proposito pra validar o desvio de cones.
+VELOCIDADE_BASE    = 0.28   # BAIXA de proposito pra validar o desvio de cones.
                             # Suba de 0.05 em 0.05 (ate 1.00) conforme ficar
                             # estavel. NUNCA deixe abaixo de VELOCIDADE_MINIMA
                             # (0.25), senao o speed_for() inverte. O freio por
                             # FPS baixo e o de curva fechada continuam ativos.
-VELOCIDADE_MINIMA  = 0.22   # subiu de 0.35 -- piso normal de curva
+VELOCIDADE_MINIMA  = 0.24   # subiu de 0.35 -- piso normal de curva
 VELOCIDADE_PERDIDO = 0.18   # perdeu a pista, andando devagar procurando
 
 FPS_MINIMO_SEGURO = 15.0
@@ -97,7 +97,7 @@ SPEED_CURVATURA_PESO  = 75.0   # baixou de 90.0 -- mesma logica
 
 CURVA_FECHADA_LIMIAR     = 0.004
 CURVA_FECHADA_RANGE      = 0.014
-VELOCIDADE_MINIMA_FECHADA = 0.20   # subiu de 0.32 -- piso mais alto so pra
+VELOCIDADE_MINIMA_FECHADA = 0.22   # subiu de 0.32 -- piso mais alto so pra
                                     # curva bem fechada tambem
 
 # =====================================================================
@@ -137,7 +137,7 @@ MAX_FRAMES_PERDIDO = 12
 # da manobra. Nesse periodo: segura o ultimo esterco, anda numa velocidade
 # segura, e tolera ~2 s sem leitura.
 MAX_FRAMES_PERDIDO_DESVIO   = 60
-VELOCIDADE_PERDIDO_DESVIO   = 0.20
+VELOCIDADE_PERDIDO_DESVIO   = 0.22
 TURN_DECAI_PERDIDO_DESVIO   = 0.985
 
 # =====================================================================
@@ -205,7 +205,7 @@ CONE_CAMERA_ATIVA = True
 CAMERA_PISTA_ID   = 0
 CAMERA_CONE_ID    = 2
 CAMERA_CONE_RES   = (320, 240)   # cone e grande: nao precisa de resolucao alta
-CAMERA_CONE_FPS   = 15           # menos banda USB e menos CPU pra decodificar MJPG;
+CAMERA_CONE_FPS = 20           # menos banda USB e menos CPU pra decodificar MJPG;
                                  # a camera da pista fica com o FPS que precisa
 
 # ---- deteccao por cor (HSV do OpenCV: H 0..179) ----
@@ -344,7 +344,7 @@ CONE_PARADA_CALMO_N = 2         # quadros seguidos 'sem se mexer' pra considerar
 CONE_PARADO_D_ALT = 0.004       # o cone mudou de altura menos que isso entre quadros = parado
 CONE_PARADO_D_X = 0.015         # idem, posicao lateral (-1..+1)
 CONE_PARADO_DIFF = 3.0          # mudanca media (0-255) da imagem da pista = ainda mexendo
-CONE_ANALISE_S = 0.25           # tempo medindo o cone com o carro parado
+CONE_ANALISE_S = 0.22           # tempo medindo o cone com o carro parado
 CONE_REARME_S = 0.5             # durante o desvio: cone sumiu por isso = ja passou; um novo pode parar
 CONE_COOLDOWN_S = 1.0           # depois de um desvio, tempo sem parar de novo
 CONE_OFFSET_SLEW_DESVIO = 3.0     # velocidade do desvio saindo da parada (erro/s); 0.8 = suave
