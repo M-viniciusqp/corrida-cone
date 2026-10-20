@@ -529,14 +529,14 @@ class ConeAvoider:
         """O cone esta onde o carro pode bater? False = bem fora da pista (alem
         da linha externa de qualquer lado): nao vale parar por ele. Sem
         estimativa confiavel devolve True (na duvida, trata como obstaculo)."""
-        w = self._estimar_w(cone, lane)
+        w = self._estimar_w(cone, lane, so_medido=True)
         if w is None:
-            return True
+            return True             # so geometria (ruidosa): na duvida e obstaculo
         lw = config.PISTA_LARGURA_CM
         # pista = da linha externa esquerda (-1.5*lw) ate a continua (+0.5*lw)
         return (-1.5 * lw - config.CONE_FORA_PISTA_CM) <= w <= (0.5 * lw + config.CONE_FORA_PISTA_CM)
 
-    def _estimar_w(self, cone, lane):
+    def _estimar_w(self, cone, lane, so_medido=False):
         """Melhor estimativa AGORA da posicao do cone (cm do centro da faixa
         direita, + = direita). None se nao ha como saber."""
         if cone is None or not cone.found:
@@ -549,7 +549,7 @@ class ConeAvoider:
         if w is None and cone.d_solida_w is not None and cone.lado_solida != 0:
             d = cone.d_solida_w * config.CONE_LARGURA_CM
             w = (lw / 2.0 - d) if cone.lado_solida > 0 else (-lw / 2.0 + d)
-        if w is None:
+        if w is None and not so_medido:
             w = self._w_geometrico(cone, lane, grava=False)
         return w
 
@@ -593,7 +593,9 @@ class ConeAvoider:
         score += 1 if ok else -1
         partes.append("lat %+.0fcm=%s" % (d, nome(ok)))
         self.classif = " | ".join(partes)
-        return score >= 0, self.classif
+        # so ignora o cone com evidencia forte (2+ fontes concordando); uma
+        # medida sozinha ou so a regra do lado nao basta: na duvida, desvia
+        return score > -config.CONE_IGNORA_SCORE, self.classif
 
     def relevante(self, cone, lane):
         """O cone importa pro carro? So se esta na FAIXA DELE (ou em cima da
