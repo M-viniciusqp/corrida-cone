@@ -257,7 +257,7 @@ class Pilot:
             sc = res.sinal_continuo
             lado_s = 1 if sc > 0.5 else (-1 if sc < -0.5 else 0)
             self.cone = self.cv.process(cone_img, lado_solida=lado_s)
-        self.manobra.update(Clock.t, self.cone, cone_img is not None, mov_pista, self.desvio)
+        self.manobra.update(Clock.t, self.cone, cone_img is not None, mov_pista, self.desvio, res)
 
         if res.valid and res.motivo == "ok" and (res.found_left or res.found_right):
             if not self.frame_anterior_confiavel:

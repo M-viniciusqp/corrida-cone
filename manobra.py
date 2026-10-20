@@ -37,6 +37,7 @@ class Manobra:
         self._rearmado = False      # em DESVIAR: o cone antigo ja saiu de vista
         self._t_sem_cone = None
         self._alt_max = 0.0         # maior altura do cone visto neste desvio
+        self._fora_da_pista = False  # o cone visto esta fora da pista: ignora
         self.mov_cone = None        # ultimas medidas (pro log)
         self.mov_pista = None
 
@@ -47,6 +48,8 @@ class Manobra:
 
     # ------------------------------------------------------------------
     def _gatilho(self, cone):
+        if self._fora_da_pista:
+            return False
         return (cone is not None and cone.found and
                 abs(cone.cx) < config.CONE_PARAR_X and
                 (cone.altura >= config.CONE_GATILHO_ALTURA or cone.toca_base))
@@ -56,7 +59,7 @@ class Manobra:
         self.t_estado = agora
         self.calmo = 0
 
-    def update(self, agora, cone, cone_novo, mov_pista, desvio):
+    def update(self, agora, cone, cone_novo, mov_pista, desvio, lane=None):
         """Chamar a cada quadro. cone_novo = chegou quadro novo da camera de
         cone. mov_pista = quanto a imagem da pista mudou desde o quadro
         anterior (None se nao ha). Devolve o estado."""
@@ -64,6 +67,9 @@ class Manobra:
             desvio.liberado = True
             return self.estado
         self.mov_pista = mov_pista
+        # cone fora da pista (do outro lado das linhas externas): nao e obstaculo
+        self._fora_da_pista = (cone is not None and cone.found and lane is not None
+                               and not desvio.no_caminho(cone, lane))
 
         # quanto o cone mexeu na imagem desde o quadro novo anterior
         if cone_novo:

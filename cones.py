@@ -537,6 +537,27 @@ class ConeAvoider:
             self.offset = 0.0
         return self.offset
 
+    def no_caminho(self, cone, lane):
+        """O cone esta onde o carro pode bater? False = bem fora da pista (alem
+        da linha externa de qualquer lado): nao vale parar por ele. Sem
+        estimativa confiavel devolve True (na duvida, trata como obstaculo)."""
+        if cone is None or not cone.found:
+            return True
+        lw = config.PISTA_LARGURA_CM
+        s = getattr(lane, "sinal_continuo", 0.0) if lane is not None else 0.0
+        if abs(s) < 0.5:
+            return True
+        w = self._w_pont(cone, lane)
+        if w is None and cone.d_solida_w is not None and cone.lado_solida != 0:
+            d = cone.d_solida_w * config.CONE_LARGURA_CM
+            w = (lw / 2.0 - d) if cone.lado_solida > 0 else (-lw / 2.0 + d)
+        if w is None:
+            w = self._w_geometrico(cone, lane, grava=False)
+        if w is None:
+            return True
+        # pista = da linha externa esquerda (-1.5*lw) ate a continua (+0.5*lw)
+        return (-1.5 * lw - config.CONE_FORA_PISTA_CM) <= w <= (0.5 * lw + config.CONE_FORA_PISTA_CM)
+
     def reiniciar_medidas(self):
         """Esquece as medidas da aproximacao (de longe, com o carro andando e
         balancando) pra medir de novo com o carro parado."""

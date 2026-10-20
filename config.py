@@ -350,6 +350,8 @@ CONE_COOLDOWN_S = 1.0           # depois de um desvio, tempo sem parar de novo
 CONE_OFFSET_SLEW_DESVIO = 3.0     # velocidade do desvio saindo da parada (erro/s); 0.8 = suave
 CONE_DESVIO_MAX_S = 9.0         # seguranca: desvio nao dura mais que isso
 CONE_GANHO_TURN_DESVIO = 1.0     # multiplica a direcao SO enquanto desvia (1.0 = igual; 1.5-2.0 = mais brusco)
+DEBUG_CADA = 4                  # --ver: mostra as janelas a cada N quadros (menos custo de FPS)
+CONE_FORA_PISTA_CM = 14.0        # cone alem da linha externa por mais que isso = fora da pista: nao para
 CONE_FAIXA_PERSISTE = True      # depois de desviar FICA na outra faixa; so troca quando um cone na faixa dela pedir
 CONE_PONT_TOL_CM = 14.0        # medida pela pontilhada que discorda da geometria por mais que isso e descartada
 CONE_PARAR_ALTURA = 0.0    # parada DESLIGADA (o carro desvia em vez de parar)

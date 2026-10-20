@@ -67,6 +67,7 @@ def main():
     estado_ant = SEGUIR
     peq_ant = None                 # imagem pequena da pista (mede se o carro ainda anda)
     t_man_log = 0.0
+    n_total = 0                    # quadros desde o inicio (so pra espacar as janelas do --ver)
     cone = None                    # ultimo ConeResult (so reprocessa frame novo)
     cone_idx = -1
     pid = SteeringPID()
@@ -95,7 +96,11 @@ def main():
             # durante o desvio o carro cruza a pontilhada: nao deixa a visao
             # "aprender" qual lado e a continua com a imagem desse momento
             vision.congelar_lado = desvio.ativo or desvio.faixa_outra
-            res = vision.process(frame, debug=DEBUG)
+            # --ver: desenhar e mostrar custa FPS. So faz a cada DEBUG_CADA quadros
+            # (o carro reage no ritmo normal; as janelas atualizam mais devagar)
+            n_total += 1
+            mostrar = DEBUG and (n_total % config.DEBUG_CADA == 0)
+            res = vision.process(frame, debug=mostrar)
 
             # quanto a imagem da pista mudou desde o quadro anterior: com o
             # carro parado fica ~0 (so ruido); andando, o chao passa
@@ -124,7 +129,7 @@ def main():
 
             # ---------- PARA -> ANALISA -> DESVIA (manobra.py) ----------
             agora = time.time()
-            estado = manobra.update(agora, cone, cone_novo, mov_pista, desvio)
+            estado = manobra.update(agora, cone, cone_novo, mov_pista, desvio, res)
             if estado != estado_ant:
                 if estado == FREAR:
                     print(f"  [manobra] CONE a vista (alt {cone.altura:.2f}) -> PARANDO...")
@@ -303,7 +308,7 @@ def main():
                 frames, t_fps = 0, time.time()
                 t_cam = t_vis = t_mot = 0.0
 
-            if DEBUG:
+            if mostrar:
                 if res.debug_view is not None:
                     pista_v = np.vstack([res.debug_view, res.debug_mask])
                     cv2.putText(pista_v, f"{manobra.estado}  vel {speed:.2f}  turn {turn:+.2f}",
