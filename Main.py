@@ -15,6 +15,8 @@ O cone nao assume o controle: ele soma um deslocamento ao erro da pista.
 """
 
 import os
+import os
+import sys
 import time
 import cv2
 
@@ -27,15 +29,19 @@ from cones import ConeVision, ConeAvoider
 import numpy as np
 from manobra import Manobra, SEGUIR, FREAR, ANALISAR, DESVIAR
 
-DEBUG = False          # desligado = mais FPS = reacao mais rapida
+# DEBUG: janelas das cameras na tela do Pi ENQUANTO o carro anda.
+#   python3 Main.py --ver     (precisa do terminal da AREA DE TRABALHO do Pi)
+# Sem --ver fica desligado = mais FPS = reacao mais rapida.
+DEBUG = "--ver" in sys.argv
 
 
 def main():
     global DEBUG
     print("Piloto autonomo: navegando ENTRE as faixas.")
     if DEBUG and not os.environ.get("DISPLAY"):
-        # terminal remoto (SSH / Pi Connect): imshow derruba o programa (Qt/xcb)
-        print("Sem tela neste terminal (DISPLAY vazio): janelas de debug desligadas.")
+        # terminal remoto (so texto): imshow derruba o programa (Qt/xcb)
+        print("Sem tela neste terminal (DISPLAY vazio): janelas desligadas. "
+              "Rode pelo terminal da area de trabalho do Pi.")
         DEBUG = False
 
     cap = abrir_camera(config.CAMERA_PISTA_ID, config.CAMERA_RES, "pista")
@@ -292,11 +298,22 @@ def main():
                 frames, t_fps = 0, time.time()
                 t_cam = t_vis = t_mot = 0.0
 
-            if DEBUG and res.debug_view is not None:
-                cv2.imshow("Visao", res.debug_view)
-                cv2.imshow("Mascara", res.debug_mask)
+            if DEBUG:
+                if res.debug_view is not None:
+                    pista_v = np.vstack([res.debug_view, res.debug_mask])
+                    cv2.putText(pista_v, f"{manobra.estado}  vel {speed:.2f}  turn {turn:+.2f}",
+                                (6, 18), cv2.FONT_HERSHEY_SIMPLEX, 0.55,
+                                (0, 255, 255), 2)
+                    cv2.imshow("PISTA", pista_v)
                 if cone is not None and cone.debug_view is not None:
-                    cv2.imshow("Cone", cone.debug_view)
+                    cone_v = cone.debug_view.copy()
+                    lado_t = {-1: "DIREITA", 1: "ESQUERDA", 0: "-"}[desvio.lado]
+                    pos = (f" cone {desvio.w_cone_cm:+.0f}cm"
+                           if desvio.w_cone_cm is not None else "")
+                    cv2.putText(cone_v, f"{manobra.estado} lado {lado_t}{pos}",
+                                (6, cone_v.shape[0] - 8), cv2.FONT_HERSHEY_SIMPLEX,
+                                0.5, (0, 255, 255), 2)
+                    cv2.imshow("CONE", cone_v)
                 if cv2.waitKey(1) & 0xFF == ord('q'):
                     break
 
